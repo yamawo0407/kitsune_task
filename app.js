@@ -3,7 +3,7 @@
 const jsStatus = document.getElementById("jsStatus");
 if (jsStatus) jsStatus.textContent = "JS: OK";
 
-const STORAGE_KEY = "reward_task_manager_v12";
+const STORAGE_KEY = "reward_task_manager_v13";
 
 function uid(){ return Math.random().toString(16).slice(2) + Date.now().toString(16); }
 function escapeHtml(s){
@@ -12,6 +12,7 @@ function escapeHtml(s){
   }[c]));
 }
 
+/* ---------- state ---------- */
 function loadState(){
   try{
     const raw = localStorage.getItem(STORAGE_KEY);
@@ -19,14 +20,13 @@ function loadState(){
     return {
       campaigns: Array.isArray(s.campaigns) ? s.campaigns : [],
       logs: Array.isArray(s.logs) ? s.logs : [],
-      tasks: Array.isArray(s.tasks) ? s.tasks : [],
       delivery: (s.delivery && typeof s.delivery === "object") ? s.delivery : {},
       purchases: (s.purchases && typeof s.purchases === "object") ? s.purchases : {},
       gacha_history: (s.gacha_history && typeof s.gacha_history === "object") ? s.gacha_history : {},
       listener_pool: (s.listener_pool && typeof s.listener_pool === "object") ? s.listener_pool : {},
     };
   }catch{
-    return { campaigns: [], logs: [], tasks: [], delivery: {}, purchases: {}, gacha_history: {}, listener_pool: {} };
+    return { campaigns: [], logs: [], delivery: {}, purchases: {}, gacha_history: {}, listener_pool: {} };
   }
 }
 let state = loadState();
@@ -57,7 +57,7 @@ function migrate(){
 }
 migrate(); saveState();
 
-/* toast */
+/* ---------- toast ---------- */
 const toastEl = document.getElementById("toast");
 let toastTimer = null;
 function toast(msg){
@@ -68,7 +68,7 @@ function toast(msg){
   toastTimer = setTimeout(()=>toastEl.classList.add("hidden"), 1200);
 }
 
-/* views */
+/* ---------- views ---------- */
 const views = {
   home: document.getElementById("view-home"),
   tasks: document.getElementById("view-tasks"),
@@ -94,7 +94,7 @@ function parseHashParts(){
   return { path: path || "home", params };
 }
 
-/* routing state */
+/* ---------- routing state ---------- */
 let currentCampaignId = null;
 let taskPageFilter = "all";
 let editMode = false;
@@ -103,7 +103,7 @@ function getCurrentCampaign(){
   return state.campaigns.find(c=>c.id===currentCampaignId) || null;
 }
 
-/* helpers */
+/* ---------- helpers ---------- */
 function rulesSorted(rules){
   return (Array.isArray(rules) ? rules : [])
     .filter(r => Number.isFinite(r.threshold) && (r.reward||"").trim())
@@ -126,7 +126,7 @@ function computeTotalsForCampaign(campaignId){
   return rows;
 }
 
-/* listener pool (datalist) */
+/* ---------- listener pool (for select) ---------- */
 function getListenerPool(campaignId){
   if(!state.listener_pool[campaignId] || !Array.isArray(state.listener_pool[campaignId])){
     state.listener_pool[campaignId] = [];
@@ -143,19 +143,8 @@ function addListenerToPool(campaignId, name){
     saveState();
   }
 }
-function renderListenerDatalist(campaignId){
-  const dl = document.getElementById("listenerList");
-  if(!dl) return;
 
-  const fromLogs = computeTotalsForCampaign(campaignId).map(x=>x.listener_name);
-  const pool = getListenerPool(campaignId);
-  const set = new Set([...pool, ...fromLogs].filter(Boolean));
-  const names = Array.from(set).sort((a,b)=>a.localeCompare(b));
-
-  dl.innerHTML = names.map(n=>`<option value="${escapeHtml(n)}"></option>`).join("");
-}
-
-/* delivery status */
+/* ---------- delivery status ---------- */
 function getDeliveryMap(campaignId){
   if (!state.delivery[campaignId] || typeof state.delivery[campaignId] !== "object") state.delivery[campaignId] = {};
   return state.delivery[campaignId];
@@ -170,7 +159,7 @@ function setDeliveryStatus(campaignId, listenerName, status){
   saveState();
 }
 
-/* purchases (shopping) */
+/* ---------- purchases (shopping) ---------- */
 function getPurchaseMap(campaignId){
   if(!state.purchases[campaignId] || typeof state.purchases[campaignId] !== "object") state.purchases[campaignId] = {};
   return state.purchases[campaignId];
@@ -191,7 +180,7 @@ function undoPurchase(campaign, listenerName){
   return false;
 }
 
-/* gacha history */
+/* ---------- gacha history ---------- */
 function getGachaCampaignMap(campaignId){
   if(!state.gacha_history[campaignId] || typeof state.gacha_history[campaignId] !== "object"){
     state.gacha_history[campaignId] = {};
@@ -222,6 +211,7 @@ function gachaSummaryChips(campaignId, listenerName){
     .map(([name, n])=>`${name} ×${n}`);
 }
 
+/* ---------- campaign done ---------- */
 function isCampaignDone(campaign){
   const totals = computeTotalsForCampaign(campaign.id);
   if(totals.length === 0) return false;
@@ -236,7 +226,7 @@ function campaignSortDesc(a,b){
   return bc.localeCompare(ac);
 }
 
-/* route */
+/* ---------- route ---------- */
 function route(){
   const { path, params } = parseHashParts();
 
@@ -284,7 +274,7 @@ function route(){
 }
 window.addEventListener("hashchange", ()=>{ route(); renderAll(); });
 
-/* HOME */
+/* ---------- HOME ---------- */
 const statCampaigns = document.getElementById("statCampaigns");
 const statOpenCampaigns = document.getElementById("statOpenCampaigns");
 const statDoneCampaigns = document.getElementById("statDoneCampaigns");
@@ -300,7 +290,7 @@ function renderHome(){
   if(overallPill) overallPill.textContent = open>0 ? `未完了 ${open}` : "未完了なし";
 }
 
-/* rules UI */
+/* ---------- rules UI ---------- */
 function addRuleRow(container, threshold="", reward=""){
   const el = document.createElement("div");
   el.className = "ruleRow";
@@ -332,7 +322,7 @@ function collectRulesFrom(container){
   return rules;
 }
 
-/* gacha UI */
+/* ---------- gacha UI ---------- */
 function addGachaRow(container, name="", rate=""){
   const el = document.createElement("div");
   el.className = "ruleRow";
@@ -363,7 +353,7 @@ function collectGachaItemsFrom(container){
   return items;
 }
 
-/* create campaign toggle */
+/* ---------- create campaign toggle ---------- */
 const createTypeSelect = document.getElementById("createTypeSelect");
 const createRulesSection = document.getElementById("createRulesSection");
 const createGachaSection = document.getElementById("createGachaSection");
@@ -391,7 +381,7 @@ if(gachaItemsBox && gachaItemsBox.children.length===0){
   addGachaRow(gachaItemsBox, "R", "90");
 }
 
-/* create campaign */
+/* ---------- create campaign ---------- */
 const createCampaignForm = document.getElementById("createCampaignForm");
 createCampaignForm?.addEventListener("submit",(e)=>{
   e.preventDefault();
@@ -436,7 +426,7 @@ createCampaignForm?.addEventListener("submit",(e)=>{
   toast("作成");
 });
 
-/* campaigns list */
+/* ---------- campaigns list ---------- */
 const campaignListEl = document.getElementById("campaignList");
 const campaignSearchEl = document.getElementById("campaignSearch");
 campaignSearchEl?.addEventListener("input", renderCampaigns);
@@ -444,7 +434,6 @@ campaignSearchEl?.addEventListener("input", renderCampaigns);
 function deleteCampaign(campaignId){
   state.campaigns = state.campaigns.filter(x=>x.id!==campaignId);
   state.logs = state.logs.filter(x=>x.campaign_id!==campaignId);
-  state.tasks = state.tasks.filter(x=>x.campaign_id!==campaignId);
   delete state.delivery[campaignId];
   delete state.purchases[campaignId];
   delete state.gacha_history[campaignId];
@@ -508,7 +497,7 @@ function renderCampaigns(){
   });
 }
 
-/* TASKS */
+/* ---------- TASKS ---------- */
 const taskCampaignListEl = document.getElementById("taskCampaignList");
 const filterAllBtn = document.getElementById("filterAllCampaigns");
 const filterOpenBtn = document.getElementById("filterOpenCampaigns");
@@ -559,7 +548,7 @@ function renderTaskCampaignList(){
   });
 }
 
-/* Campaign confirm edit panel */
+/* ---------- Campaign confirm edit panel ---------- */
 const campaignTitleEl = document.getElementById("campaignTitle");
 const campaignMetaEl = document.getElementById("campaignMeta");
 const campaignStatusPill = document.getElementById("campaignStatusPill");
@@ -573,7 +562,6 @@ const deleteCampaignBtn = document.getElementById("deleteCampaignBtn");
 
 const leaderboardBody = document.getElementById("leaderboardBody");
 
-/* edit ui */
 const editTypeSelect = document.getElementById("editTypeSelect");
 const editRulesSection = document.getElementById("editRulesSection");
 const editGachaSection = document.getElementById("editGachaSection");
@@ -674,7 +662,7 @@ function renderCampaignEditForm(c){
   }
 }
 
-/* reward cell */
+/* ---------- reward cell ---------- */
 function renderRewardCell(campaign, listenerName, points){
   const type = normalizeCampaignType(campaign.type);
 
@@ -719,8 +707,8 @@ function renderRewardCell(campaign, listenerName, points){
   `;
 }
 
-/* reward table (adminButtons=false なら編集/削除は出さない) */
-function renderRewardTable(tbodyEl, campaign, adminButtons){
+/* ---------- reward table ---------- */
+function renderRewardTable(tbodyEl, campaign){
   if(!tbodyEl) return;
 
   const totals = computeTotalsForCampaign(campaign.id);
@@ -774,37 +762,83 @@ function renderRewardTable(tbodyEl, campaign, adminButtons){
       renderAll();
     });
   });
+}
 
-  // adminButtons は今回の要望で「リアルタイム編集」では使わない（確認画面の編集モードのみ）
-  if(adminButtons){
-    // ここは敢えて空にしてある（必要なら後で復活できる）
+/* ---------- LIVE name select rendering ---------- */
+const listenerSelect = document.getElementById("listenerSelect");
+const listenerNewName = document.getElementById("listenerNewName");
+const gachaUserSelect = document.getElementById("gachaUserSelect");
+
+function renderListenerSelects(campaignId){
+  const pool = getListenerPool(campaignId);
+  const fromLogs = computeTotalsForCampaign(campaignId).map(x=>x.listener_name);
+  const set = new Set([...pool, ...fromLogs].filter(Boolean));
+  const names = Array.from(set).sort((a,b)=>a.localeCompare(b));
+
+  const optionsHtml =
+    `<option value="">（選択）</option>` +
+    names.map(n=>`<option value="${escapeHtml(n)}">${escapeHtml(n)}</option>`).join("");
+
+  if(listenerSelect){
+    const current = listenerSelect.value;
+    listenerSelect.innerHTML = optionsHtml;
+    if(current && names.includes(current)) listenerSelect.value = current;
+  }
+  if(gachaUserSelect){
+    const current = gachaUserSelect.value;
+    gachaUserSelect.innerHTML = optionsHtml;
+    if(current && names.includes(current)) gachaUserSelect.value = current;
   }
 }
 
-/* LIVE */
+function commitNewName(){
+  const c = getCurrentCampaign();
+  if(!c) return "";
+  const name = (listenerNewName?.value || "").trim();
+  if(!name) return "";
+  addListenerToPool(c.id, name);
+  renderListenerSelects(c.id);
+  if(listenerSelect) listenerSelect.value = name;
+  if(gachaUserSelect && !gachaUserSelect.value) gachaUserSelect.value = name;
+  listenerNewName.value = "";
+  return name;
+}
+
+listenerNewName?.addEventListener("blur", ()=>{ commitNewName(); });
+listenerNewName?.addEventListener("keydown", (e)=>{
+  if(e.key === "Enter"){
+    e.preventDefault();
+    commitNewName();
+  }
+});
+
+function getActiveListenerName(){
+  const c = getCurrentCampaign();
+  if(!c) return "";
+  const fromNew = (listenerNewName?.value || "").trim();
+  if(fromNew){
+    addListenerToPool(c.id, fromNew);
+    renderListenerSelects(c.id);
+    if(listenerSelect) listenerSelect.value = fromNew;
+    listenerNewName.value = "";
+    return fromNew;
+  }
+  return (listenerSelect?.value || "").trim();
+}
+
+/* ---------- LIVE UI refs ---------- */
 const liveTitle = document.getElementById("liveTitle");
 const liveMeta = document.getElementById("liveMeta");
 const goConfirmBtn = document.getElementById("goConfirmBtn");
 const goTaskEditBtn = document.getElementById("goTaskEditBtn");
 const liveLeaderboardBody = document.getElementById("liveLeaderboardBody");
 const rewardListBox = document.getElementById("rewardListBox");
-
 const liveGachaCard = document.getElementById("liveGachaCard");
 const liveInputCard = document.getElementById("liveInputCard");
 
-const listenerNameInput = document.getElementById("listenerName");
 const customPointsInput = document.getElementById("customPoints");
 const liveMsg = document.getElementById("liveMsg");
 function setLiveMsg(msg){ if(liveMsg) liveMsg.textContent = msg || ""; }
-
-listenerNameInput?.addEventListener("change", ()=>{
-  const c = getCurrentCampaign();
-  if(!c) return;
-  const name = (listenerNameInput.value||"").trim();
-  if(!name) return;
-  addListenerToPool(c.id, name);
-  renderListenerDatalist(c.id);
-});
 
 /* live input buttons */
 document.querySelectorAll("[data-add]").forEach(btn=>{
@@ -827,11 +861,12 @@ document.getElementById("undoBtn")?.addEventListener("click", ()=> undoLastLog()
 function addLog(delta){
   const c = getCurrentCampaign();
   if(!c) return;
-  const name = (listenerNameInput?.value||"").trim();
-  if(!name) return;
+
+  const name = getActiveListenerName();
+  if(!name) return toast("名前");
 
   addListenerToPool(c.id, name);
-  renderListenerDatalist(c.id);
+  renderListenerSelects(c.id);
 
   state.logs.push({
     id: uid(),
@@ -840,6 +875,7 @@ function addLog(delta){
     delta_points: delta,
     created_at: new Date().toISOString(),
   });
+
   saveState();
   renderAll();
   setLiveMsg(`${delta>0?"+":""}${delta} / ${name}`);
@@ -860,7 +896,7 @@ function undoLastLog(){
   }
 }
 
-/* reward list */
+/* ---------- reward list ---------- */
 function renderRewardList(c){
   if(!rewardListBox) return;
 
@@ -892,21 +928,11 @@ function renderRewardList(c){
   }).join("");
 }
 
-/* GACHA LIVE */
-const gachaUserInput = document.getElementById("gachaUserInput");
+/* ---------- GACHA LIVE ---------- */
 const gachaPtInput = document.getElementById("gachaPtInput");
 const gachaRollBtn = document.getElementById("gachaRollBtn");
 const gachaResultBox = document.getElementById("gachaResultBox");
 const gachaCopyBtn = document.getElementById("gachaCopyBtn");
-
-gachaUserInput?.addEventListener("change", ()=>{
-  const c = getCurrentCampaign();
-  if(!c) return;
-  const name = (gachaUserInput.value||"").trim();
-  if(!name) return;
-  addListenerToPool(c.id, name);
-  renderListenerDatalist(c.id);
-});
 
 function calcGachaPulls(pt, g){
   const singleCost = Math.max(0, Number(g.singleCost||0));
@@ -961,7 +987,7 @@ function rollGacha(user, pt){
   }
 
   addListenerToPool(c.id, user);
-  renderListenerDatalist(c.id);
+  renderListenerSelects(c.id);
 
   const results = [];
   for(let i=0;i<calc.total;i++){
@@ -969,6 +995,7 @@ function rollGacha(user, pt){
     results.push(picked ?? "（景品未設定）");
   }
 
+  // ガチャpt分をlogに入れる
   state.logs.push({
     id: uid(),
     campaign_id: c.id,
@@ -979,11 +1006,11 @@ function rollGacha(user, pt){
 
   addGachaResult(c.id, user, pt, results);
 
+  // 集計表示（番号なし、被りは×）
   const count = new Map();
   for(const r of results){
     count.set(r, (count.get(r) || 0) + 1);
   }
-
   const lines = Array.from(count.entries())
     .sort((a,b)=> b[1]-a[1] || a[0].localeCompare(b[0]))
     .map(([name, n]) => (n === 1 ? `${name}` : `${name} ×${n}`))
@@ -998,7 +1025,14 @@ function rollGacha(user, pt){
 }
 
 gachaRollBtn?.addEventListener("click", ()=>{
-  const user = (gachaUserInput?.value||"").trim();
+  const c = getCurrentCampaign();
+  if(!c) return;
+
+  // select優先、なければ新しい名前を確定
+  let user = (gachaUserSelect?.value || "").trim();
+  if(!user){
+    user = commitNewName();
+  }
   const pt = Number(gachaPtInput?.value || 0);
   if(!user) return toast("名前");
   if(!Number.isFinite(pt) || pt<=0) return toast("pt");
@@ -1023,6 +1057,7 @@ gachaCopyBtn?.addEventListener("click", async ()=>{
   }
 });
 
+/* ---------- live gacha visibility ---------- */
 function renderGachaCard(c){
   const type = normalizeCampaignType(c.type);
   const isGacha = type === "gacha";
@@ -1030,7 +1065,7 @@ function renderGachaCard(c){
   liveInputCard?.classList.toggle("hidden", isGacha);
 }
 
-/* render live */
+/* ---------- render live ---------- */
 function renderLive(){
   const c = getCurrentCampaign();
   if(!c){ location.hash="#tasks"; return; }
@@ -1045,15 +1080,15 @@ function renderLive(){
 
   renderGachaCard(c);
   renderRewardList(c);
+  renderRewardTable(liveLeaderboardBody, c);
 
-  // ★ここが要望：リアルタイム編集の返礼品状況は編集なし
-  renderRewardTable(liveLeaderboardBody, c, false);
+  // ★ここ：常に候補をselectへ
+  renderListenerSelects(c.id);
 
-  renderListenerDatalist(c.id);
   setLiveMsg("");
 }
 
-/* campaign confirm */
+/* ---------- campaign confirm ---------- */
 function renderCampaignConfirm(){
   const c = getCurrentCampaign();
   if(!c){ location.hash="#tasks"; return; }
@@ -1068,10 +1103,10 @@ function renderCampaignConfirm(){
 
   if(editMode) renderCampaignEditForm(c);
 
-  renderRewardTable(leaderboardBody, c, false);
+  renderRewardTable(leaderboardBody, c);
 }
 
-/* backup/restore */
+/* ---------- backup/restore ---------- */
 document.getElementById("exportBtn")?.addEventListener("click", ()=>{
   const blob = new Blob([JSON.stringify(state,null,2)], {type:"application/json"});
   const a = document.createElement("a");
@@ -1090,7 +1125,6 @@ document.getElementById("importFile")?.addEventListener("change", async (e)=>{
     state = {
       campaigns: Array.isArray(obj.campaigns) ? obj.campaigns : [],
       logs: Array.isArray(obj.logs) ? obj.logs : [],
-      tasks: Array.isArray(obj.tasks) ? obj.tasks : [],
       delivery: (obj.delivery && typeof obj.delivery === "object") ? obj.delivery : {},
       purchases: (obj.purchases && typeof obj.purchases === "object") ? obj.purchases : {},
       gacha_history: (obj.gacha_history && typeof obj.gacha_history === "object") ? obj.gacha_history : {},
@@ -1108,7 +1142,7 @@ document.getElementById("importFile")?.addEventListener("change", async (e)=>{
   }
 });
 
-/* render all */
+/* ---------- render all ---------- */
 function renderAll(){
   renderHome();
   renderCampaigns();
