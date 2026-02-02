@@ -246,8 +246,6 @@ body{
 .right{ text-align:right; }
 .center{ text-align:center; }
 
-.divider{ height: 1px; background: var(--line); margin: 14px 0; }
-
 .rulesBox{ display:grid; gap:10px; }
 .ruleRow{
   display:grid;
