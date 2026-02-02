@@ -39,7 +39,7 @@
       <div class="hero-title">やりたいことを選ぶ</div>
 
       <div class="choice-grid">
-        <a class="choice-card" href="#tasks">
+        <a class="choice-card" href="#tasks?list=open">
           <div class="choice-icon">✅</div>
           <div class="choice-main">タスク管理</div>
         </a>
@@ -58,19 +58,19 @@
           <div class="pill" id="overallPill">—</div>
         </div>
 
-        <!-- ここをタップ → タスク管理の該当企画一覧へ -->
+        <!-- タップ → タスク管理の該当企画一覧 -->
         <div class="stats">
           <a class="stat statLink" href="#tasks?list=all">
             <div class="stat-num" id="statCampaigns">0</div>
             <div class="stat-label">企画</div>
           </a>
           <a class="stat statLink" href="#tasks?list=open">
-            <div class="stat-num" id="statTasksOpen">0</div>
-            <div class="stat-label">未完了タスク</div>
+            <div class="stat-num" id="statOpenCampaigns">0</div>
+            <div class="stat-label">未完了</div>
           </a>
           <a class="stat statLink" href="#tasks?list=done">
-            <div class="stat-num" id="statTasksDone">0</div>
-            <div class="stat-label">完了タスク</div>
+            <div class="stat-num" id="statDoneCampaigns">0</div>
+            <div class="stat-label">完了</div>
           </a>
         </div>
       </section>
@@ -92,59 +92,17 @@
     <section class="pagehead">
       <div>
         <div class="h1">タスク管理</div>
-        <div class="muted">企画を選ぶ → 確認（閲覧） / リアルタイム編集</div>
-      </div>
-      <div class="row gap wrapBtns">
-        <input id="tasksCampaignSearch" class="input" placeholder="企画名で検索" />
+        <div class="muted">企画の「完了/未完了」は返礼品状況（全員完了か）で自動判定</div>
       </div>
     </section>
 
-    <!-- タスク管理のフィルタ（枠は消す） -->
+    <!-- フィルタ（検索は消す） -->
     <section class="row gap wrapBtns">
       <button class="btn ghost small" id="filterOpenCampaigns">未完了</button>
       <button class="btn ghost small" id="filterDoneCampaigns">完了</button>
       <button class="btn ghost small" id="filterAllCampaigns">すべて</button>
     </section>
 
-    <!-- Global task search -->
-    <section class="card">
-      <div class="card-head">
-        <div class="card-title">検索</div>
-        <div class="muted">全企画のタスクを検索</div>
-      </div>
-
-      <div class="grid4">
-        <label class="field">
-          <span>リスナー</span>
-          <input id="globalTaskListener" class="input" placeholder="例：Alice" />
-        </label>
-        <label class="field">
-          <span>From</span>
-          <input id="globalTaskFrom" class="input" type="date" />
-        </label>
-        <label class="field">
-          <span>To</span>
-          <input id="globalTaskTo" class="input" type="date" />
-        </label>
-        <label class="field">
-          <span>状態</span>
-          <select id="globalTaskStatus" class="input">
-            <option value="open">未完了</option>
-            <option value="done">完了</option>
-            <option value="all">すべて</option>
-          </select>
-        </label>
-      </div>
-
-      <div class="row gap wrapBtns">
-        <button id="clearGlobalTaskSearch" class="btn ghost" type="button">検索クリア</button>
-      </div>
-
-      <div class="divider"></div>
-      <div id="globalTaskResults" class="taskList"></div>
-    </section>
-
-    <!-- campaign list -->
     <section class="card">
       <div class="card-head">
         <div class="card-title">企画一覧</div>
@@ -213,7 +171,7 @@
     </section>
   </main>
 
-  <!-- ===== CAMPAIGN CONFIRM (read-only by default) ===== -->
+  <!-- ===== CAMPAIGN CONFIRM ===== -->
   <main id="view-campaign" class="wrap stack hidden">
     <section class="pagehead">
       <div>
@@ -232,7 +190,6 @@
       </div>
     </section>
 
-    <!-- 編集モードだけ表示 -->
     <section class="card hidden" id="campaignEditPanel">
       <div class="card-head">
         <div class="card-title">企画編集</div>
@@ -277,7 +234,6 @@
       </form>
     </section>
 
-    <!-- 返礼品状況 -->
     <section class="card">
       <div class="card-head">
         <div class="card-title">返礼品状況</div>
@@ -297,12 +253,8 @@
       </table>
     </section>
 
-    <!-- タスク枠は消す（セクションのみ） -->
+    <!-- タスク（枠は無し、空表示も出さない） -->
     <section class="stack">
-      <div class="row gap wrapBtns" id="taskEditHint">
-        <div class="muted">タスク編集は「編集」ボタンを押してから。</div>
-      </div>
-
       <form id="createTaskForm" class="grid3 hidden">
         <label class="field">
           <span>リスナー名</span>
@@ -346,12 +298,10 @@
       </div>
 
       <div class="row gap wrapBtns">
-        <button id="endCampaignBtn" class="btn danger" type="button">企画終了</button>
         <a id="goTaskEditBtn" class="btn primary" href="#campaign=">タスク編集</a>
       </div>
     </section>
 
-    <!-- 返礼品一覧を見える化 -->
     <section class="card">
       <div class="card-head">
         <div class="card-title">返礼品一覧</div>
