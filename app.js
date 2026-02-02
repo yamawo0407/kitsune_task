@@ -6,7 +6,7 @@
 const jsStatus = document.getElementById("jsStatus");
 if (jsStatus) jsStatus.textContent = "JS: OK";
 
-const STORAGE_KEY = "reward_task_manager_v14";
+const STORAGE_KEY = "reward_task_manager_v16";
 
 function uid(){ return Math.random().toString(16).slice(2) + Date.now().toString(16); }
 function escapeHtml(s){
@@ -193,7 +193,7 @@ function setDeliveryStatus(campaignId, listenerName, status){
   saveState();
 }
 
-/* 企画完了判定：1人でも未完了なら未完了 */
+/* 企画完了判定：1人でも未完了がいれば未完了 */
 function isCampaignDone(campaign){
   const totals = computeTotalsForCampaign(campaign.id);
   if(totals.length === 0) return false;
@@ -388,7 +388,6 @@ function setCreateTypeUI(type){
   createRulesSection?.classList.toggle("hidden", isGacha);
   createGachaSection?.classList.toggle("hidden", !isGacha);
 }
-
 createTypeSelect?.addEventListener("change", ()=> setCreateTypeUI(createTypeSelect.value));
 
 addRuleRowBtn?.addEventListener("click", ()=> rulesBox && addRuleRow(rulesBox, "", ""));
@@ -559,14 +558,8 @@ function renderTaskCampaignList(){
 }
 
 /* =========================
-   返礼品状況一覧（campaign）
+   返礼品表示（方式ごと）
 ========================= */
-const campaignTitleEl = document.getElementById("campaignTitle");
-const campaignMetaEl = document.getElementById("campaignMeta");
-const campaignStatusPill = document.getElementById("campaignStatusPill");
-const goLiveBtn = document.getElementById("goLiveBtn");
-const leaderboardBody = document.getElementById("leaderboardBody");
-
 function renderRewardCell(campaign, listenerName, points){
   const type = normalizeCampaignType(campaign.type);
 
@@ -595,6 +588,7 @@ function renderRewardCell(campaign, listenerName, points){
   const buyButtons = rules.length
     ? `<div class="shopBuyList">${rules.map(x=>{
         const disabled = remaining < x.cost;
+        // ※ここは「返礼品状況の編集/削除」ではない（購入）なので残す
         return `<button class="shopBuyBtn" type="button" data-buy="${escapeHtml(listenerName)}" data-cost="${x.cost}" data-reward="${escapeHtml(x.reward)}" ${disabled?"disabled":""}>${escapeHtml(`${x.cost}：${x.reward}`)}</button>`;
       }).join("")}</div>`
     : `<div class="muted">—</div>`;
@@ -611,7 +605,10 @@ function renderRewardCell(campaign, listenerName, points){
   `;
 }
 
-function renderRewardTable(tbodyEl, campaign){
+/* =========================
+   表描画：確認用（状況編集あり）
+========================= */
+function renderRewardTableConfirm(tbodyEl, campaign){
   if(!tbodyEl) return;
 
   const totals = computeTotalsForCampaign(campaign.id);
@@ -637,6 +634,7 @@ function renderRewardTable(tbodyEl, campaign){
     `;
   }).join("");
 
+  // 状況変更
   tbodyEl.querySelectorAll("[data-delivery]").forEach(sel=>{
     sel.addEventListener("change", ()=>{
       const name = sel.getAttribute("data-delivery");
@@ -646,7 +644,7 @@ function renderRewardTable(tbodyEl, campaign){
     });
   });
 
-  // shopping buy buttons
+  // shopping 購入（企画仕様として必要なら残す）
   tbodyEl.querySelectorAll("[data-buy]").forEach(btn=>{
     btn.addEventListener("click", ()=>{
       const name = btn.getAttribute("data-buy");
@@ -667,6 +665,60 @@ function renderRewardTable(tbodyEl, campaign){
   });
 }
 
+/* =========================
+   表描画：リアルタイム用（見るだけ）
+   ✅編集ボタン/削除ボタンは出さない
+========================= */
+function renderRewardTableLiveReadOnly(tbodyEl, campaign){
+  if(!tbodyEl) return;
+
+  const totals = computeTotalsForCampaign(campaign.id);
+  if(!totals.length){
+    tbodyEl.innerHTML = `<tr><td colspan="3" class="muted">データなし</td></tr>`;
+    return;
+  }
+
+  // ✅ 操作UIを一切出さない（編集/削除/状況セレクトなし）
+  tbodyEl.innerHTML = totals.map(r=>{
+    return `
+      <tr>
+        <td>${escapeHtml(r.listener_name)}</td>
+        <td class="right">${r.points}</td>
+        <td class="center">${renderRewardCell(campaign, r.listener_name, r.points)}</td>
+      </tr>
+    `;
+  }).join("");
+
+  // shopping の購入は「返礼品状況の編集/削除」ではないので必要なら残す
+  tbodyEl.querySelectorAll("[data-buy]").forEach(btn=>{
+    btn.addEventListener("click", ()=>{
+      const name = btn.getAttribute("data-buy");
+      const cost = parseInt(btn.getAttribute("data-cost"),10);
+      const reward = btn.getAttribute("data-reward");
+      addPurchase(campaign, name, cost, reward);
+      toast("購入");
+      renderAll();
+    });
+  });
+  tbodyEl.querySelectorAll("[data-undo-buy]").forEach(btn=>{
+    btn.addEventListener("click", ()=>{
+      const name = btn.getAttribute("data-undo-buy");
+      const ok = undoPurchase(campaign, name);
+      toast(ok ? "取り消し" : "なし");
+      renderAll();
+    });
+  });
+}
+
+/* =========================
+   返礼品状況一覧（campaign）
+========================= */
+const campaignTitleEl = document.getElementById("campaignTitle");
+const campaignMetaEl = document.getElementById("campaignMeta");
+const campaignStatusPill = document.getElementById("campaignStatusPill");
+const goLiveBtn = document.getElementById("goLiveBtn");
+const leaderboardBody = document.getElementById("leaderboardBody");
+
 function renderCampaign(){
   const c = getCurrentCampaign();
   if(!c){ location.hash="#tasks"; return; }
@@ -679,7 +731,7 @@ function renderCampaign(){
   if(campaignStatusPill) campaignStatusPill.textContent = statusLabel;
   if(goLiveBtn) goLiveBtn.href = `#live=${c.id}`;
 
-  renderRewardTable(leaderboardBody, c);
+  renderRewardTableConfirm(leaderboardBody, c);
 }
 
 /* =========================
@@ -723,36 +775,49 @@ function renderListenerSelects(campaignId){
   }
 }
 
-function commitNewName(){
+/* ✅名前入力 → 自動追加（停止0.4秒で確定）＋自動選択 */
+let nameDebounceTimer = null;
+listenerNewName?.addEventListener("input", ()=>{
   const c = getCurrentCampaign();
-  if(!c) return "";
-  const name = (listenerNewName?.value || "").trim();
-  if(!name) return "";
-  addListenerToPool(c.id, name);
-  renderListenerSelects(c.id);
-  if(listenerSelect) listenerSelect.value = name;
-  if(gachaUserSelect && !gachaUserSelect.value) gachaUserSelect.value = name;
-  listenerNewName.value = "";
-  return name;
-}
-listenerNewName?.addEventListener("blur", ()=>{ commitNewName(); });
+  if(!c) return;
+
+  clearTimeout(nameDebounceTimer);
+  nameDebounceTimer = setTimeout(()=>{
+    const name = (listenerNewName.value || "").trim();
+    if(!name) return;
+
+    addListenerToPool(c.id, name);
+    renderListenerSelects(c.id);
+
+    // ✅いつでもポイント追加できるように「選択状態にする」
+    if(listenerSelect) listenerSelect.value = name;
+  }, 400);
+});
+
+/* Enterで確定（保険） */
 listenerNewName?.addEventListener("keydown", (e)=>{
   if(e.key === "Enter"){
     e.preventDefault();
-    commitNewName();
+    const c = getCurrentCampaign();
+    if(!c) return;
+    const name = (listenerNewName.value || "").trim();
+    if(!name) return;
+    addListenerToPool(c.id, name);
+    renderListenerSelects(c.id);
+    if(listenerSelect) listenerSelect.value = name;
+    toast("追加");
   }
 });
 
 function getActiveListenerName(){
   const c = getCurrentCampaign();
   if(!c) return "";
-  const fromNew = (listenerNewName?.value || "").trim();
-  if(fromNew){
-    addListenerToPool(c.id, fromNew);
+  const typed = (listenerNewName?.value || "").trim();
+  if(typed){
+    addListenerToPool(c.id, typed);
     renderListenerSelects(c.id);
-    if(listenerSelect) listenerSelect.value = fromNew;
-    listenerNewName.value = "";
-    return fromNew;
+    if(listenerSelect) listenerSelect.value = typed;
+    return typed;
   }
   return (listenerSelect?.value || "").trim();
 }
@@ -838,7 +903,7 @@ function renderRewardList(c){
     : `<div class="muted">返礼品なし</div>`;
 }
 
-/* ガチャ */
+/* ガチャ（ロジックのみ：編集/削除のUIはそもそも無し） */
 const gachaPtInput = document.getElementById("gachaPtInput");
 const gachaRollBtn = document.getElementById("gachaRollBtn");
 const gachaResultBox = document.getElementById("gachaResultBox");
@@ -897,7 +962,7 @@ function rollGacha(user, pt){
     results.push(pickGachaItem(c.gacha.items || []) ?? "（景品未設定）");
   }
 
-  // 使用ptはログに加算として入れる（投げたptとして扱う）
+  // 投げたptとして加算ログ
   state.logs.push({
     id: uid(),
     campaign_id: c.id,
@@ -929,9 +994,7 @@ gachaRollBtn?.addEventListener("click", ()=>{
   const c = getCurrentCampaign();
   if(!c) return;
 
-  let user = (gachaUserSelect?.value || "").trim();
-  if(!user) user = commitNewName();
-
+  const user = (gachaUserSelect?.value || "").trim();
   const pt = Number(gachaPtInput?.value || 0);
   if(!user) return toast("名前");
   if(!Number.isFinite(pt) || pt<=0) return toast("pt");
@@ -977,9 +1040,11 @@ function renderLive(){
 
   renderGachaVisibility(c);
   renderRewardList(c);
-  renderRewardTable(liveLeaderboardBody, c);
-  renderListenerSelects(c.id);
 
+  // ✅リアルタイムの返礼品状況は“見るだけ”
+  renderRewardTableLiveReadOnly(liveLeaderboardBody, c);
+
+  renderListenerSelects(c.id);
   setLiveMsg("");
 }
 
