@@ -156,12 +156,6 @@ body{
   border-radius: 12px;
   font-size: 12px;
 }
-.btn.tiny{
-  padding: 5px 8px;
-  border-radius: 10px;
-  font-size: 11px;
-}
-/* さらに小さい削除ボタン用 */
 .btn.micro{
   padding: 3px 6px;
   border-radius: 9px;
@@ -251,8 +245,18 @@ body{
   border: 1px solid var(--line);
   background: var(--mint3);
   color: var(--muted);
-  margin-left: 8px;
 }
+.badgeRow{
+  display:flex;
+  gap: 8px;
+  flex-wrap: nowrap;           /* 改行しない */
+  overflow-x: auto;            /* はみ出たら横スクロール */
+  white-space: nowrap;
+  -webkit-overflow-scrolling: touch;
+  padding-bottom: 2px;
+}
+.badgeRow::-webkit-scrollbar{ height: 6px; }
+.badgeRow::-webkit-scrollbar-thumb{ background: rgba(84,122,104,.25); border-radius: 999px; }
 
 .table{ width:100%; border-collapse: collapse; }
 .table th, .table td{
@@ -337,6 +341,21 @@ body{
   font-size: 12px;
 }
 .shopBuyBtn:disabled{ opacity:.45; cursor:not-allowed; }
+
+/* ガチャ結果 */
+.textarea{
+  width: 100%;
+  border-radius: 14px;
+  border: 1px solid var(--line);
+  padding: 10px 12px;
+  background: #fff;
+  resize: vertical;
+  outline: none;
+}
+.textarea:focus{
+  border-color: rgba(70,192,139,.75);
+  box-shadow: 0 0 0 3px rgba(70,192,139,.18);
+}
 
 .toast{
   position: fixed;
