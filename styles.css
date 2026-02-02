@@ -323,7 +323,7 @@ body{
 
 .shopBox{ display:grid; gap: 8px; }
 .shopRemaining{ font-size: 12px; color: var(--muted); }
-.shopItems{ display:flex; flex-wrap:wrap; gap: 6px; }
+.shopItems{ display:flex; flex-wrap:wrap; gap: 6px; justify-content:center; }
 .shopItemChip{
   border:1px solid var(--line);
   background: var(--mint3);
