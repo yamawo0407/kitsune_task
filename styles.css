@@ -249,8 +249,8 @@ body{
 .badgeRow{
   display:flex;
   gap: 8px;
-  flex-wrap: nowrap;           /* 改行しない */
-  overflow-x: auto;            /* はみ出たら横スクロール */
+  flex-wrap: nowrap;
+  overflow-x: auto;
   white-space: nowrap;
   -webkit-overflow-scrolling: touch;
   padding-bottom: 2px;
@@ -342,7 +342,6 @@ body{
 }
 .shopBuyBtn:disabled{ opacity:.45; cursor:not-allowed; }
 
-/* ガチャ結果 */
 .textarea{
   width: 100%;
   border-radius: 14px;
