@@ -3,6 +3,7 @@
 const jsStatus = document.getElementById("jsStatus");
 if (jsStatus) jsStatus.textContent = "JS: OK";
 
+// ★ v12のキーを維持してデータ引き継ぎ
 const STORAGE_KEY = "reward_task_manager_v12";
 
 function uid(){ return Math.random().toString(16).slice(2) + Date.now().toString(16); }
@@ -174,7 +175,6 @@ function gachaSummaryChips(campaignId, listenerName){
       count.set(item, (count.get(item)||0)+1);
     }
   }
-  // count desc
   return Array.from(count.entries())
     .sort((a,b)=> b[1]-a[1] || a[0].localeCompare(b[0]))
     .map(([name, n])=>`${name} x${n}`);
@@ -310,7 +310,7 @@ function addGachaRow(container, name="", rate=""){
     </label>
     <div class="field">
       <span>&nbsp;</span>
-      <button class="btn ghost" type="button" data-del>削除</ حذف</button>
+      <button class="btn ghost" type="button" data-del>削除</button>
     </div>
   `;
   el.querySelector("[data-del]").addEventListener("click", ()=>el.remove());
@@ -395,6 +395,7 @@ createCampaignForm?.addEventListener("submit",(e)=>{
     createTypeSelect.value = "achievement";
     setCreateTypeUI("achievement");
   }
+
   renderAll();
   toast("作成");
 });
@@ -485,7 +486,6 @@ function filterCampaignsByListMode(list, campaigns){
   if(list==="done") return campaigns.filter(c=>isCampaignDone(c));
   return campaigns;
 }
-
 function renderTaskCampaignList(){
   if(!taskCampaignListEl) return;
 
@@ -560,11 +560,10 @@ editAddGachaRowBtn?.addEventListener("click", ()=> editGachaItemsBox && addGacha
 function getCurrentCampaign(){
   return state.campaigns.find(c=>c.id===currentCampaignId) || null;
 }
-
 function setEditMode(on){
   editMode = !!on;
-  if(campaignEditPanel) campaignEditPanel.classList.toggle("hidden", !editMode);
-  if(createTaskFormEl) createTaskFormEl.classList.toggle("hidden", !editMode);
+  campaignEditPanel?.classList.toggle("hidden", !editMode);
+  createTaskFormEl?.classList.toggle("hidden", !editMode);
   if(toggleEditModeBtn) toggleEditModeBtn.textContent = editMode ? "編集を閉じる" : "編集";
   renderAll();
 }
@@ -680,26 +679,23 @@ function deleteListenerAll(campaignId, name){
   const dm = getDeliveryMap(campaignId); delete dm[n];
   const pm = getPurchaseMap(campaignId); delete pm[n];
   const gm = getGachaCampaignMap(campaignId); delete gm[n];
+  saveState();
 }
 
-/* ===== reward cell ===== */
+/* reward cell */
 function renderRewardCell(campaign, listenerName, points){
   const type = normalizeCampaignType(campaign.type);
 
   if(type === "gacha"){
     const chips = gachaSummaryChips(campaign.id, listenerName);
     if(!chips.length) return `<div class="muted">—</div>`;
-    return `<div class="shopItems">${
-      chips.map(x=>`<span class="shopItemChip">${escapeHtml(x)}</span>`).join("")
-    }</div>`;
+    return `<div class="shopItems">${chips.map(x=>`<span class="shopItemChip">${escapeHtml(x)}</span>`).join("")}</div>`;
   }
 
   if(type === "achievement"){
     const list = achievedRewards(campaign, points);
     if(list.length === 0) return `<div class="muted">—</div>`;
-    return `<div class="shopItems">${
-      list.map(x=>`<span class="shopItemChip">${escapeHtml(`${x.cost}pt達成：${x.reward}`)}</span>`).join("")
-    }</div>`;
+    return `<div class="shopItems">${list.map(x=>`<span class="shopItemChip">${escapeHtml(`${x.cost}pt達成：${x.reward}`)}</span>`).join("")}</div>`;
   }
 
   // shopping
@@ -713,12 +709,10 @@ function renderRewardCell(campaign, listenerName, points){
     : `<div class="muted">—</div>`;
 
   const buyButtons = rules.length
-    ? `<div class="shopBuyList">${
-        rules.map(x=>{
-          const disabled = remaining < x.cost;
-          return `<button class="shopBuyBtn" type="button" data-buy="${escapeHtml(listenerName)}" data-cost="${x.cost}" data-reward="${escapeHtml(x.reward)}" ${disabled?"disabled":""}>${escapeHtml(`${x.cost}：${x.reward}`)}</button>`;
-        }).join("")
-      }</div>`
+    ? `<div class="shopBuyList">${rules.map(x=>{
+        const disabled = remaining < x.cost;
+        return `<button class="shopBuyBtn" type="button" data-buy="${escapeHtml(listenerName)}" data-cost="${x.cost}" data-reward="${escapeHtml(x.reward)}" ${disabled?"disabled":""}>${escapeHtml(`${x.cost}：${x.reward}`)}</button>`;
+      }).join("")}</div>`
     : `<div class="muted">—</div>`;
 
   return `
@@ -740,8 +734,8 @@ function renderRewardCell(campaign, listenerName, points){
  */
 function renderRewardTable(tbodyEl, campaign, adminButtons){
   if(!tbodyEl) return;
-  const totals = computeTotalsForCampaign(campaign.id);
 
+  const totals = computeTotalsForCampaign(campaign.id);
   if(!totals.length){
     tbodyEl.innerHTML = `<tr><td colspan="4" class="muted">データなし</td></tr>`;
     return;
@@ -780,7 +774,6 @@ function renderRewardTable(tbodyEl, campaign, adminButtons){
     });
   });
 
-  // shopping buttons
   tbodyEl.querySelectorAll("[data-buy]").forEach(btn=>{
     btn.addEventListener("click", ()=>{
       const name = btn.getAttribute("data-buy");
@@ -800,7 +793,6 @@ function renderRewardTable(tbodyEl, campaign, adminButtons){
     });
   });
 
-  // ★ realtime用 編集/削除（ポイント増減もここで）
   if(adminButtons){
     tbodyEl.querySelectorAll("[data-admin-edit]").forEach(btn=>{
       btn.addEventListener("click", ()=>{
@@ -819,7 +811,6 @@ function renderRewardTable(tbodyEl, campaign, adminButtons){
           return;
         }
 
-        // pt増減：ログ追加で対応（ガチャでも通常でもOK）
         const deltaStr = prompt("増減pt（例 500 / -300）", "500");
         if(deltaStr===null) return;
         const delta = Number(deltaStr);
@@ -843,7 +834,6 @@ function renderRewardTable(tbodyEl, campaign, adminButtons){
         const name = btn.getAttribute("data-admin-del");
         if(!confirm("削除しますか？")) return;
         deleteListenerAll(campaign.id, name);
-        saveState();
         toast("削除");
         renderAll();
       });
@@ -851,10 +841,7 @@ function renderRewardTable(tbodyEl, campaign, adminButtons){
   }
 }
 
-/* ===== tasks list (confirm page) ===== */
-const createTaskFormEl = document.getElementById("createTaskForm");
-const taskListEl = document.getElementById("taskList");
-
+/* tasks CRUD (confirm page) */
 createTaskFormEl?.addEventListener("submit",(e)=>{
   e.preventDefault();
   const c = getCurrentCampaign();
@@ -953,7 +940,6 @@ function renderTaskListForCampaign(c){
   });
 }
 
-/* ===== confirm page render ===== */
 function renderCampaignConfirm(){
   const c = getCurrentCampaign();
   if(!c){ location.hash="#tasks"; return; }
@@ -984,7 +970,9 @@ const goTaskEditBtn = document.getElementById("goTaskEditBtn");
 const liveLeaderboardBody = document.getElementById("liveLeaderboardBody");
 const rewardListBox = document.getElementById("rewardListBox");
 
+const liveGachaCard = document.getElementById("liveGachaCard");
 const liveInputCard = document.getElementById("liveInputCard");
+
 const listenerNameInput = document.getElementById("listenerName");
 const customPointsInput = document.getElementById("customPoints");
 const liveMsg = document.getElementById("liveMsg");
@@ -1073,7 +1061,6 @@ function renderRewardList(c){
 }
 
 /* ===== GACHA LIVE ===== */
-const liveGachaCard = document.getElementById("liveGachaCard");
 const gachaUserInput = document.getElementById("gachaUserInput");
 const gachaPtInput = document.getElementById("gachaPtInput");
 const gachaRollBtn = document.getElementById("gachaRollBtn");
@@ -1102,7 +1089,6 @@ function calcGachaPulls(pt, g){
   const total = multiTimes * (multiCount||0) + singleTimes;
   return { multiTimes, singleTimes, total, remain };
 }
-
 function pickGachaItem(items){
   const cleaned = items
     .filter(x => x && x.name && Number.isFinite(Number(x.rate)) && Number(x.rate) > 0)
@@ -1145,7 +1131,7 @@ function rollGacha(user, pt){
     results.push(picked ?? "（景品未設定）");
   }
 
-  // ★ ptは「受け取ったpt」として合計ptに加算
+  // ★ ptは受け取ったptとして合計に加算
   state.logs.push({
     id: uid(),
     campaign_id: c.id,
@@ -1194,20 +1180,27 @@ gachaCopyBtn?.addEventListener("click", async ()=>{
   }
 });
 
+/**
+ * ★ここが今回の本題
+ * - ガチャ企画以外はガチャ欄を必ず hidden にする
+ */
 function renderGachaCard(c){
   const type = normalizeCampaignType(c.type);
   const isGacha = type === "gacha";
+
+  // ガチャ企画以外は必ず消す
   liveGachaCard?.classList.toggle("hidden", !isGacha);
 
-  // ★ ガチャならライブ入力カードを消す
+  // ガチャ企画ならライブ入力を消す / それ以外は表示
   liveInputCard?.classList.toggle("hidden", isGacha);
 
   if(!isGacha) return;
+
   if(gachaCalcPill) gachaCalcPill.textContent = "—";
-  // 直前の結果は残してOK（消したいならここで gachaResultBox.value=""）
+  // 結果欄は残してもいいが、毎回消したいなら↓を有効化
+  // if(gachaResultBox) gachaResultBox.value = "";
 }
 
-/* live render */
 function renderLive(){
   const c = getCurrentCampaign();
   if(!c){ location.hash="#tasks"; return; }
@@ -1220,16 +1213,13 @@ function renderLive(){
   if(goConfirmBtn) goConfirmBtn.href = `#campaign=${c.id}`;
   if(goTaskEditBtn) goTaskEditBtn.href = `#campaign=${c.id}`;
 
-  renderGachaCard(c);
+  renderGachaCard(c);   // ★ここで表示/非表示を確定
   renderRewardList(c);
 
-  // ★ realtimeは常に 編集/削除 を出す
+  // realtimeは常に 編集/削除を出す
   renderRewardTable(liveLeaderboardBody, c, true);
   setLiveMsg("");
 }
-
-/* ===== Campaign list render on tasks/campaigns ===== */
-function getCurrentCampaignSafe(){ return getCurrentCampaign(); }
 
 /* backup/restore */
 document.getElementById("exportBtn")?.addEventListener("click", ()=>{
@@ -1267,7 +1257,7 @@ document.getElementById("importFile")?.addEventListener("change", async (e)=>{
   }
 });
 
-/* ===== render all ===== */
+/* render all */
 function renderAll(){
   renderHome();
   renderCampaigns();
