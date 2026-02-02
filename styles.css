@@ -159,6 +159,11 @@ body{
   border-radius: 12px;
   font-size: 12px;
 }
+.btn.tiny{
+  padding: 5px 8px;
+  border-radius: 10px;
+  font-size: 11px;
+}
 .filebtn{ display:inline-flex; align-items:center; gap: 8px; }
 
 .hero{
@@ -253,6 +258,7 @@ body{
 }
 .table th{ color: var(--muted); font-weight: 750; font-size: 12px; }
 .right{ text-align:right; }
+.center{ text-align:center; }
 
 .divider{ height: 1px; background: var(--line); margin: 14px 0; }
 
@@ -293,6 +299,20 @@ body{
 .taskMeta{ color: var(--muted); font-size: 12px; }
 .taskBtns{ display:flex; gap: 8px; flex-wrap:wrap; }
 
+.rewardList{
+  display:flex;
+  flex-wrap:wrap;
+  gap: 10px;
+}
+.rewardChip{
+  border:1px solid var(--line);
+  background:#fff;
+  border-radius: 999px;
+  padding: 8px 10px;
+  font-size: 12px;
+  color: var(--text);
+}
+
 .toast{
   position: fixed;
   right: 14px;
@@ -301,7 +321,7 @@ body{
   border:1px solid var(--line);
   border-radius: 16px;
   padding: 10px 12px;
-  box-shadow: 0 12px 40px rgba(16,40,28,.10);
+  box-shadow: var(--shadow);
   max-width: 380px;
 }
 .jsStatus{
@@ -314,5 +334,5 @@ body{
   padding: 6px 10px;
   font-size: 12px;
   color: var(--muted);
-  box-shadow: 0 12px 40px rgba(16,40,28,.10);
+  box-shadow: var(--shadow);
 }
