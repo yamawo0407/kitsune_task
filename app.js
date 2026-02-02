@@ -3,7 +3,7 @@
 const jsStatus = document.getElementById("jsStatus");
 if (jsStatus) jsStatus.textContent = "JS: OK";
 
-const STORAGE_KEY = "reward_task_manager_v10";
+const STORAGE_KEY = "reward_task_manager_v11";
 
 function uid(){ return Math.random().toString(16).slice(2) + Date.now().toString(16); }
 function escapeHtml(s){
@@ -32,12 +32,22 @@ let state = loadState();
 function saveState(){ localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); }
 
 function normalizeCampaignType(t){
-  return (t === "shopping" || t === "achievement") ? t : "achievement";
+  return (t === "shopping" || t === "achievement" || t === "gacha") ? t : "achievement";
+}
+function ensureGacha(c){
+  if(!c.gacha || typeof c.gacha !== "object"){
+    c.gacha = { singleCost: 0, multiCost: 0, multiCount: 0, items: [] };
+  }
+  if(!Array.isArray(c.gacha.items)) c.gacha.items = [];
+  c.gacha.singleCost = Number(c.gacha.singleCost||0);
+  c.gacha.multiCost = Number(c.gacha.multiCost||0);
+  c.gacha.multiCount = Number(c.gacha.multiCount||0);
 }
 function migrate(){
   state.campaigns.forEach(c=>{
     c.type = normalizeCampaignType(c.type);
     if(!c.created_at) c.created_at = new Date().toISOString();
+    if(c.type === "gacha") ensureGacha(c);
   });
   if(!state.delivery || typeof state.delivery !== "object") state.delivery = {};
   if(!state.purchases || typeof state.purchases !== "object") state.purchases = {};
@@ -52,7 +62,7 @@ function toast(msg){
   toastEl.textContent = msg;
   toastEl.classList.remove("hidden");
   clearTimeout(toastTimer);
-  toastTimer = setTimeout(()=>toastEl.classList.add("hidden"), 1300);
+  toastTimer = setTimeout(()=>toastEl.classList.add("hidden"), 1200);
 }
 
 /* views */
@@ -140,12 +150,10 @@ function isCampaignDone(campaign){
   if(totals.length === 0) return false;
   return totals.every(r => getDeliveryStatus(campaign.id, r.listener_name) === "done");
 }
-
-/* sort campaigns by start_date desc */
 function campaignSortDesc(a,b){
   const ad = (a.start_date||"");
   const bd = (b.start_date||"");
-  if(ad !== bd) return bd.localeCompare(ad); // YYYY-MM-DD compare OK
+  if(ad !== bd) return bd.localeCompare(ad);
   const ac = a.created_at || "";
   const bc = b.created_at || "";
   return bc.localeCompare(ac);
@@ -153,7 +161,7 @@ function campaignSortDesc(a,b){
 
 /* routing */
 let currentCampaignId = null;
-let taskPageFilter = "open";
+let taskPageFilter = "all";  // ★ デフォルト：すべて
 let editMode = false;
 
 function route(){
@@ -187,7 +195,7 @@ function route(){
   if(path === "tasks"){
     showView("tasks");
     const list = (params.get("list") || "").toLowerCase();
-    taskPageFilter = (list==="open"||list==="done"||list==="all") ? list : "open";
+    taskPageFilter = (list==="open"||list==="done"||list==="all") ? list : "all"; // ★ 未指定は all
     renderTaskCampaignList();
     return;
   }
@@ -220,9 +228,7 @@ function renderHome(){
   if(overallPill) overallPill.textContent = open>0 ? `未完了 ${open}` : "未完了なし";
 }
 
-/* rules ui */
-const rulesBox = document.getElementById("rulesBox");
-const addRuleRowBtn = document.getElementById("addRuleRowBtn");
+/* ===== UI: rules rows ===== */
 function addRuleRow(container, threshold="", reward=""){
   const el = document.createElement("div");
   el.className = "ruleRow";
@@ -253,10 +259,65 @@ function collectRulesFrom(container){
   rules.sort((a,b)=>a.threshold-b.threshold);
   return rules;
 }
+
+/* ===== UI: gacha rows ===== */
+function addGachaRow(container, name="", rate=""){
+  const el = document.createElement("div");
+  el.className = "ruleRow";
+  el.innerHTML = `
+    <label class="field">
+      <span>内容</span>
+      <input class="input" type="text" data-g-name value="${escapeHtml(name)}" />
+    </label>
+    <label class="field">
+      <span>出現率（%）</span>
+      <input class="input" type="number" min="0" step="0.01" data-g-rate value="${escapeHtml(rate)}" />
+    </label>
+    <div class="field">
+      <span>&nbsp;</span>
+      <button class="btn ghost" type="button" data-del>削除</button>
+    </div>
+  `;
+  el.querySelector("[data-del]").addEventListener("click", ()=>el.remove());
+  container.appendChild(el);
+}
+function collectGachaItemsFrom(container){
+  const items = [];
+  container.querySelectorAll(".ruleRow").forEach(row=>{
+    const name = (row.querySelector("[data-g-name]")?.value||"").toString().trim();
+    const rate = parseFloat(row.querySelector("[data-g-rate]")?.value);
+    if(name && Number.isFinite(rate) && rate > 0) items.push({ name, rate });
+  });
+  return items;
+}
+
+/* ===== Create Campaign UI toggle ===== */
+const createTypeSelect = document.getElementById("createTypeSelect");
+const createRulesSection = document.getElementById("createRulesSection");
+const createGachaSection = document.getElementById("createGachaSection");
+const rulesBox = document.getElementById("rulesBox");
+const addRuleRowBtn = document.getElementById("addRuleRowBtn");
+
+const addGachaRowBtn = document.getElementById("addGachaRowBtn");
+const gachaItemsBox = document.getElementById("gachaItemsBox");
+
+function setCreateTypeUI(type){
+  const isGacha = type === "gacha";
+  createRulesSection?.classList.toggle("hidden", isGacha);
+  createGachaSection?.classList.toggle("hidden", !isGacha);
+}
+createTypeSelect?.addEventListener("change", ()=> setCreateTypeUI(createTypeSelect.value));
+
 addRuleRowBtn?.addEventListener("click", ()=> rulesBox && addRuleRow(rulesBox, "", ""));
 if(rulesBox && rulesBox.children.length===0){
   addRuleRow(rulesBox, "1000", "デジグッズA");
   addRuleRow(rulesBox, "3000", "デジグッズB");
+}
+addGachaRowBtn?.addEventListener("click", ()=> gachaItemsBox && addGachaRow(gachaItemsBox, "", ""));
+if(gachaItemsBox && gachaItemsBox.children.length===0){
+  addGachaRow(gachaItemsBox, "SSR", "1");
+  addGachaRow(gachaItemsBox, "SR", "9");
+  addGachaRow(gachaItemsBox, "R", "90");
 }
 
 /* create campaign */
@@ -264,29 +325,48 @@ const createCampaignForm = document.getElementById("createCampaignForm");
 createCampaignForm?.addEventListener("submit",(e)=>{
   e.preventDefault();
   const fd = new FormData(createCampaignForm);
+
   const name = (fd.get("name")||"").toString().trim();
   const start_date = (fd.get("start_date")||"").toString().trim();
   const type = normalizeCampaignType((fd.get("type")||"achievement").toString());
   if(!name || !start_date) return;
 
-  const rules = rulesBox ? collectRulesFrom(rulesBox) : [];
-
-  state.campaigns.unshift({
+  let campaign = {
     id: uid(),
     name,
     start_date,
     type,
-    rules,
+    rules: [],
     created_at: new Date().toISOString(),
-  });
+  };
 
+  if(type === "gacha"){
+    const singleCost = Number(fd.get("g_singleCost")||0);
+    const multiCost  = Number(fd.get("g_multiCost")||0);
+    const multiCount = Number(fd.get("g_multiCount")||0);
+    const items = gachaItemsBox ? collectGachaItemsFrom(gachaItemsBox) : [];
+    campaign.gacha = { singleCost, multiCost, multiCount, items };
+    ensureGacha(campaign);
+  }else{
+    const rules = rulesBox ? collectRulesFrom(rulesBox) : [];
+    campaign.rules = rules;
+  }
+
+  state.campaigns.unshift(campaign);
   saveState();
   createCampaignForm.reset();
+
+  // 初期UI戻す
+  if(createTypeSelect){
+    createTypeSelect.value = "achievement";
+    setCreateTypeUI("achievement");
+  }
+
   renderAll();
   toast("作成");
 });
 
-/* campaign list (campaigns page) */
+/* ===== Campaign list (campaigns page) ===== */
 const campaignListEl = document.getElementById("campaignList");
 const campaignSearchEl = document.getElementById("campaignSearch");
 campaignSearchEl?.addEventListener("input", renderCampaigns);
@@ -317,12 +397,11 @@ function renderCampaigns(){
     const done = isCampaignDone(c);
     const statusLabel = done ? "完了" : "未完了";
     const statusBadge = done ? "✅" : "🔴";
-
     return `
       <div class="item">
         <div>
-          <div>
-            <strong>${escapeHtml(c.name)}</strong>
+          <div><strong>${escapeHtml(c.name)}</strong></div>
+          <div class="badgeRow">
             <span class="badge">${escapeHtml(c.start_date)}</span>
             <span class="badge">${statusLabel}</span>
           </div>
@@ -357,15 +436,15 @@ function renderCampaigns(){
   });
 }
 
-/* TASKS */
+/* ===== TASKS ===== */
 const taskCampaignListEl = document.getElementById("taskCampaignList");
+const filterAllBtn = document.getElementById("filterAllCampaigns");
 const filterOpenBtn = document.getElementById("filterOpenCampaigns");
 const filterDoneBtn = document.getElementById("filterDoneCampaigns");
-const filterAllBtn = document.getElementById("filterAllCampaigns");
 
+filterAllBtn?.addEventListener("click", ()=>{ taskPageFilter="all"; renderTaskCampaignList(); });
 filterOpenBtn?.addEventListener("click", ()=>{ taskPageFilter="open"; renderTaskCampaignList(); });
 filterDoneBtn?.addEventListener("click", ()=>{ taskPageFilter="done"; renderTaskCampaignList(); });
-filterAllBtn?.addEventListener("click", ()=>{ taskPageFilter="all"; renderTaskCampaignList(); });
 
 function filterCampaignsByListMode(list, campaigns){
   if(list==="open") return campaigns.filter(c=>!isCampaignDone(c));
@@ -388,12 +467,11 @@ function renderTaskCampaignList(){
     const done = isCampaignDone(c);
     const statusBadge = done ? "✅" : "🔴";
     const statusLabel = done ? "完了" : "未完了";
-
     return `
       <div class="item itemClickable" data-open="${c.id}">
         <div>
-          <div>
-            <strong>${escapeHtml(c.name)}</strong>
+          <div><strong>${escapeHtml(c.name)}</strong></div>
+          <div class="badgeRow">
             <span class="badge">${escapeHtml(c.start_date)}</span>
             <span class="badge">${statusLabel}</span>
           </div>
@@ -410,7 +488,7 @@ function renderTaskCampaignList(){
   });
 }
 
-/* CAMPAIGN CONFIRM */
+/* ===== Campaign Confirm ===== */
 const campaignTitleEl = document.getElementById("campaignTitle");
 const campaignMetaEl = document.getElementById("campaignMeta");
 const campaignStatusPill = document.getElementById("campaignStatusPill");
@@ -420,13 +498,30 @@ const toggleEditModeBtn = document.getElementById("toggleEditModeBtn");
 const campaignEditPanel = document.getElementById("campaignEditPanel");
 const editCampaignForm = document.getElementById("editCampaignForm");
 const closeEditCampaignBtn = document.getElementById("closeEditCampaignBtn");
-const editRulesBox = document.getElementById("editRulesBox");
-const editAddRuleRowBtn = document.getElementById("editAddRuleRowBtn");
 const deleteCampaignBtn = document.getElementById("deleteCampaignBtn");
 
 const leaderboardBody = document.getElementById("leaderboardBody");
 const createTaskFormEl = document.getElementById("createTaskForm");
 const taskListEl = document.getElementById("taskList");
+
+/* edit ui toggle */
+const editTypeSelect = document.getElementById("editTypeSelect");
+const editRulesSection = document.getElementById("editRulesSection");
+const editGachaSection = document.getElementById("editGachaSection");
+const editRulesBox = document.getElementById("editRulesBox");
+const editAddRuleRowBtn = document.getElementById("editAddRuleRowBtn");
+
+const editGachaItemsBox = document.getElementById("editGachaItemsBox");
+const editAddGachaRowBtn = document.getElementById("editAddGachaRowBtn");
+
+function setEditTypeUI(type){
+  const isGacha = type === "gacha";
+  editRulesSection?.classList.toggle("hidden", isGacha);
+  editGachaSection?.classList.toggle("hidden", !isGacha);
+}
+editTypeSelect?.addEventListener("change", ()=> setEditTypeUI(editTypeSelect.value));
+editAddRuleRowBtn?.addEventListener("click", ()=> editRulesBox && addRuleRow(editRulesBox, "", ""));
+editAddGachaRowBtn?.addEventListener("click", ()=> editGachaItemsBox && addGachaRow(editGachaItemsBox, "", ""));
 
 function getCurrentCampaign(){
   return state.campaigns.find(c=>c.id===currentCampaignId) || null;
@@ -442,7 +537,6 @@ function setEditMode(on){
 
 toggleEditModeBtn?.addEventListener("click", ()=> setEditMode(!editMode));
 closeEditCampaignBtn?.addEventListener("click", ()=> setEditMode(false));
-editAddRuleRowBtn?.addEventListener("click", ()=> editRulesBox && addRuleRow(editRulesBox, "", ""));
 
 deleteCampaignBtn?.addEventListener("click", ()=>{
   const c = getCurrentCampaign();
@@ -468,7 +562,21 @@ editCampaignForm?.addEventListener("submit",(e)=>{
   c.name = name;
   c.start_date = start_date;
   c.type = type;
-  c.rules = editRulesBox ? collectRulesFrom(editRulesBox) : [];
+
+  if(type === "gacha"){
+    c.rules = [];
+    c.gacha = {
+      singleCost: Number(fd.get("g_singleCost")||0),
+      multiCost: Number(fd.get("g_multiCost")||0),
+      multiCount: Number(fd.get("g_multiCount")||0),
+      items: editGachaItemsBox ? collectGachaItemsFrom(editGachaItemsBox) : []
+    };
+    ensureGacha(c);
+  }else{
+    c.gacha = undefined;
+    c.rules = editRulesBox ? collectRulesFrom(editRulesBox) : [];
+  }
+
   saveState();
   toast("保存");
   renderAll();
@@ -476,15 +584,35 @@ editCampaignForm?.addEventListener("submit",(e)=>{
 
 function renderCampaignEditForm(c){
   if(!editCampaignForm) return;
+
   editCampaignForm.elements["name"].value = c.name;
   editCampaignForm.elements["start_date"].value = c.start_date;
   editCampaignForm.elements["type"].value = normalizeCampaignType(c.type);
 
-  if(!editRulesBox) return;
-  editRulesBox.innerHTML = "";
-  const rules = rulesSorted(c.rules);
-  if(rules.length===0) addRuleRow(editRulesBox, "", "");
-  else for(const r of rules) addRuleRow(editRulesBox, String(r.threshold), r.reward);
+  setEditTypeUI(normalizeCampaignType(c.type));
+
+  // rules
+  if(editRulesBox){
+    editRulesBox.innerHTML = "";
+    const rules = rulesSorted(c.rules);
+    if(rules.length===0) addRuleRow(editRulesBox, "", "");
+    else for(const r of rules) addRuleRow(editRulesBox, String(r.threshold), r.reward);
+  }
+
+  // gacha
+  if(normalizeCampaignType(c.type)==="gacha"){
+    ensureGacha(c);
+    editCampaignForm.elements["g_singleCost"].value = String(c.gacha.singleCost||"");
+    editCampaignForm.elements["g_multiCost"].value  = String(c.gacha.multiCost||"");
+    editCampaignForm.elements["g_multiCount"].value = String(c.gacha.multiCount||"");
+
+    if(editGachaItemsBox){
+      editGachaItemsBox.innerHTML = "";
+      const items = Array.isArray(c.gacha.items) ? c.gacha.items : [];
+      if(items.length===0) addGachaRow(editGachaItemsBox, "", "");
+      else for(const it of items) addGachaRow(editGachaItemsBox, it.name, String(it.rate));
+    }
+  }
 }
 
 function renameListener(campaignId, oldName, newName){
@@ -518,8 +646,13 @@ function deleteListener(campaignId, name){
   const pm = getPurchaseMap(campaignId); delete pm[n];
 }
 
+/* reward cell */
 function renderRewardCell(campaign, listenerName, points){
   const type = normalizeCampaignType(campaign.type);
+
+  if(type === "gacha"){
+    return `<div class="muted">—</div>`;
+  }
 
   if(type === "achievement"){
     const list = achievedRewards(campaign, points);
@@ -529,6 +662,7 @@ function renderRewardCell(campaign, listenerName, points){
     }</div>`;
   }
 
+  // shopping
   const rules = rulesSorted(campaign.rules).map(r=>({cost:r.threshold, reward:r.reward}));
   const purchases = getPurchases(campaign.id, listenerName);
   const spent = purchases.reduce((s,x)=> s + (x.cost||0), 0);
@@ -646,7 +780,7 @@ function renderRewardTable(tbodyEl, campaign){
   }
 }
 
-/* task CRUD */
+/* tasks CRUD */
 createTaskFormEl?.addEventListener("submit",(e)=>{
   e.preventDefault();
   const c = getCurrentCampaign();
@@ -676,11 +810,7 @@ createTaskFormEl?.addEventListener("submit",(e)=>{
 function renderTaskListForCampaign(c){
   if(!taskListEl) return;
   const tasks = state.tasks.filter(t=>t.campaign_id===c.id);
-
-  if(!tasks.length){
-    taskListEl.innerHTML = "";
-    return;
-  }
+  if(!tasks.length){ taskListEl.innerHTML = ""; return; }
 
   taskListEl.innerHTML = tasks.map(t=>{
     const created = byISODateOnly(t.created_at);
@@ -762,8 +892,8 @@ function renderCampaignConfirm(){
   if(goLiveBtn) goLiveBtn.href = `#live=${c.id}`;
 
   if(!editMode){
-    if(campaignEditPanel) campaignEditPanel.classList.add("hidden");
-    if(createTaskFormEl) createTaskFormEl.classList.add("hidden");
+    campaignEditPanel?.classList.add("hidden");
+    createTaskFormEl?.classList.add("hidden");
   }
 
   renderCampaignEditForm(c);
@@ -771,7 +901,7 @@ function renderCampaignConfirm(){
   renderTaskListForCampaign(c);
 }
 
-/* LIVE */
+/* ===== LIVE ===== */
 const liveTitle = document.getElementById("liveTitle");
 const liveMeta = document.getElementById("liveMeta");
 const goConfirmBtn = document.getElementById("goConfirmBtn");
@@ -784,6 +914,7 @@ const customPointsInput = document.getElementById("customPoints");
 const liveMsg = document.getElementById("liveMsg");
 function setLiveMsg(msg){ if(liveMsg) liveMsg.textContent = msg || ""; }
 
+/* live input buttons */
 document.querySelectorAll("[data-add]").forEach(btn=>{
   btn.addEventListener("click", ()=> addLog(parseInt(btn.getAttribute("data-add"),10)));
 });
@@ -833,14 +964,30 @@ function undoLastLog(){
   }
 }
 
+/* reward list */
 function renderRewardList(c){
   if(!rewardListBox) return;
+
+  const type = normalizeCampaignType(c.type);
+
+  if(type === "gacha"){
+    ensureGacha(c);
+    const items = c.gacha.items || [];
+    if(items.length===0){
+      rewardListBox.innerHTML = `<div class="muted">返礼品なし</div>`;
+      return;
+    }
+    rewardListBox.innerHTML = items.map(it =>
+      `<div class="rewardChip">${escapeHtml(it.name)}（${escapeHtml(it.rate)}%）</div>`
+    ).join("");
+    return;
+  }
+
   const rules = rulesSorted(c.rules);
   if(!rules.length){
     rewardListBox.innerHTML = `<div class="muted">返礼品なし</div>`;
     return;
   }
-  const type = normalizeCampaignType(c.type);
   rewardListBox.innerHTML = rules.map(r=>{
     const label = (type==="achievement")
       ? `${r.threshold}pt達成：${escapeHtml(r.reward)}`
@@ -849,6 +996,124 @@ function renderRewardList(c){
   }).join("");
 }
 
+/* ===== GACHA LIVE ===== */
+const liveGachaCard = document.getElementById("liveGachaCard");
+const gachaPtInput = document.getElementById("gachaPtInput");
+const gachaRollBtn = document.getElementById("gachaRollBtn");
+const gachaResultBox = document.getElementById("gachaResultBox");
+const gachaCopyBtn = document.getElementById("gachaCopyBtn");
+const gachaCalcPill = document.getElementById("gachaCalcPill");
+
+function calcGachaPulls(pt, g){
+  const singleCost = Math.max(0, Number(g.singleCost||0));
+  const multiCost = Math.max(0, Number(g.multiCost||0));
+  const multiCount = Math.max(0, Number(g.multiCount||0));
+
+  if(pt <= 0 || singleCost <= 0) return { multiTimes:0, singleTimes:0, total:0, remain:pt };
+
+  // まず多連が成立するなら多連を優先（一般的な挙動）
+  let multiTimes = 0;
+  let remain = pt;
+
+  if(multiCost > 0 && multiCount > 0){
+    multiTimes = Math.floor(remain / multiCost);
+    remain = remain - multiTimes * multiCost;
+  }
+
+  const singleTimes = Math.floor(remain / singleCost);
+  remain = remain - singleTimes * singleCost;
+
+  const total = multiTimes * (multiCount||0) + singleTimes;
+  return { multiTimes, singleTimes, total, remain };
+}
+
+function pickGachaItem(items){
+  // items: [{name, rate}]
+  const cleaned = items
+    .filter(x => x && x.name && Number.isFinite(Number(x.rate)) && Number(x.rate) > 0)
+    .map(x => ({ name: x.name, rate: Number(x.rate) }));
+
+  if(cleaned.length===0) return null;
+
+  const sum = cleaned.reduce((s,x)=>s+x.rate,0);
+  const r = Math.random() * sum;
+  let acc = 0;
+  for(const it of cleaned){
+    acc += it.rate;
+    if(r <= acc) return it.name;
+  }
+  return cleaned[cleaned.length-1].name;
+}
+
+function rollGacha(pt){
+  const c = getCurrentCampaign();
+  if(!c) return;
+  ensureGacha(c);
+
+  const items = c.gacha.items || [];
+  const calc = calcGachaPulls(pt, c.gacha);
+
+  if(gachaCalcPill){
+    const multiLabel = (c.gacha.multiCost>0 && c.gacha.multiCount>0) ? `${calc.multiTimes}回（${c.gacha.multiCount}連）` : `0回`;
+    gachaCalcPill.textContent = `回数：${calc.total}（多連 ${multiLabel} / 単発 ${calc.singleTimes}） 余り：${calc.remain}pt`;
+  }
+
+  if(calc.total <= 0){
+    if(gachaResultBox) gachaResultBox.value = "";
+    toast("回せない");
+    return;
+  }
+
+  const results = [];
+  for(let i=0;i<calc.total;i++){
+    const picked = pickGachaItem(items);
+    results.push(picked ?? "（景品未設定）");
+  }
+
+  const header = `使用pt：${pt}\n回数：${calc.total}\n\n`;
+  const body = results.map((x,i)=>`${String(i+1).padStart(2,"0")}：${x}`).join("\n");
+  const text = header + body;
+
+  if(gachaResultBox) gachaResultBox.value = text;
+  toast("結果");
+}
+
+gachaRollBtn?.addEventListener("click", ()=>{
+  const pt = Number(gachaPtInput?.value || 0);
+  rollGacha(pt);
+});
+
+gachaCopyBtn?.addEventListener("click", async ()=>{
+  const text = (gachaResultBox?.value||"").toString();
+  if(!text.trim()) return toast("空");
+  try{
+    await navigator.clipboard.writeText(text);
+    toast("コピー");
+  }catch{
+    // fallback
+    try{
+      gachaResultBox.focus();
+      gachaResultBox.select();
+      document.execCommand("copy");
+      toast("コピー");
+    }catch{
+      alert("コピーに失敗しました。");
+    }
+  }
+});
+
+function renderGachaCard(c){
+  const type = normalizeCampaignType(c.type);
+  const isGacha = type === "gacha";
+  liveGachaCard?.classList.toggle("hidden", !isGacha);
+
+  if(!isGacha) return;
+  ensureGacha(c);
+  if(gachaCalcPill) gachaCalcPill.textContent = "—";
+  if(gachaResultBox) gachaResultBox.value = "";
+}
+
+/* live render */
 function renderLive(){
   const c = getCurrentCampaign();
   if(!c){ location.hash="#tasks"; return; }
@@ -861,12 +1126,13 @@ function renderLive(){
   if(goConfirmBtn) goConfirmBtn.href = `#campaign=${c.id}`;
   if(goTaskEditBtn) goTaskEditBtn.href = `#campaign=${c.id}`;
 
+  renderGachaCard(c);
   renderRewardList(c);
   renderRewardTable(liveLeaderboardBody, c);
   setLiveMsg("");
 }
 
-/* Backup/Restore */
+/* backup/restore */
 document.getElementById("exportBtn")?.addEventListener("click", ()=>{
   const blob = new Blob([JSON.stringify(state,null,2)], {type:"application/json"});
   const a = document.createElement("a");
@@ -901,7 +1167,7 @@ document.getElementById("importFile")?.addEventListener("change", async (e)=>{
   }
 });
 
-/* render */
+/* render all */
 function renderAll(){
   renderHome();
   renderCampaigns();
@@ -911,5 +1177,35 @@ function renderAll(){
 }
 
 /* init */
+function getCurrentCampaignSafe(){
+  return getCurrentCampaign();
+}
+function renderCampaignConfirm(){
+  const c = getCurrentCampaignSafe();
+  if(!c){ location.hash="#tasks"; return; }
+
+  const done = isCampaignDone(c);
+  const statusLabel = done ? "完了" : "未完了";
+
+  if(campaignTitleEl) campaignTitleEl.textContent = c.name;
+  if(campaignMetaEl) campaignMetaEl.textContent = `${c.start_date}`;
+  if(campaignStatusPill) campaignStatusPill.textContent = statusLabel;
+  if(goLiveBtn) goLiveBtn.href = `#live=${c.id}`;
+
+  if(!editMode){
+    campaignEditPanel?.classList.add("hidden");
+    createTaskFormEl?.classList.add("hidden");
+  }
+
+  renderCampaignEditForm(c);
+  renderRewardTable(leaderboardBody, c);
+  renderTaskListForCampaign(c);
+}
+
+/* create type UI init */
+if(createTypeSelect){
+  setCreateTypeUI(createTypeSelect.value);
+}
+
 route();
 renderAll();
