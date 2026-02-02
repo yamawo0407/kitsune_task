@@ -5,7 +5,7 @@ const jsStatus = document.getElementById("jsStatus");
 if (jsStatus) jsStatus.textContent = "JS: OK";
 
 /* ========= State ========= */
-const STORAGE_KEY = "reward_task_manager_v8";
+const STORAGE_KEY = "reward_task_manager_v9";
 
 function uid(){ return Math.random().toString(16).slice(2) + Date.now().toString(16); }
 function escapeHtml(s){
@@ -23,28 +23,26 @@ function loadState(){
       campaigns: Array.isArray(s.campaigns) ? s.campaigns : [],
       logs: Array.isArray(s.logs) ? s.logs : [],
       tasks: Array.isArray(s.tasks) ? s.tasks : [],
-      delivery: (s.delivery && typeof s.delivery === "object") ? s.delivery : {}, // {campaignId:{listenerName:"done"|"open"}}
+      delivery: (s.delivery && typeof s.delivery === "object") ? s.delivery : {},   // {campaignId:{listener:"done"|"open"}}
+      purchases: (s.purchases && typeof s.purchases === "object") ? s.purchases : {} // {campaignId:{listener:[{cost,reward}]}}
     };
   }catch{
-    return { campaigns: [], logs: [], tasks: [], delivery: {} };
+    return { campaigns: [], logs: [], tasks: [], delivery: {}, purchases: {} };
   }
 }
 let state = loadState();
 function saveState(){ localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); }
 
-/* ===== migrate older data ===== */
+/* ========= migration ========= */
 function normalizeCampaignType(t){
   return (t === "shopping" || t === "achievement") ? t : "achievement";
 }
 function migrate(){
-  state.campaigns.forEach(c=>{
-    c.type = normalizeCampaignType(c.type);
-    if (typeof c.is_closed !== "boolean") c.is_closed = false; // v8: 企画の完了/未完了
-  });
-  if (!state.delivery || typeof state.delivery !== "object") state.delivery = {};
+  state.campaigns.forEach(c=>{ c.type = normalizeCampaignType(c.type); });
+  if(!state.delivery || typeof state.delivery !== "object") state.delivery = {};
+  if(!state.purchases || typeof state.purchases !== "object") state.purchases = {};
 }
-migrate();
-saveState();
+migrate(); saveState();
 
 /* ========= Toast ========= */
 const toastEl = document.getElementById("toast");
@@ -92,23 +90,12 @@ function rulesSorted(rules){
     .slice()
     .sort((a,b)=>a.threshold-b.threshold);
 }
-function getRewardHit(rules, points){
-  const sorted = rulesSorted(rules);
-  let hit = { reward: "", threshold: null };
-  for(const r of sorted){
-    if(points >= r.threshold) hit = { reward: r.reward, threshold: r.threshold };
-    else break;
-  }
-  return hit;
-}
-function formatReward(campaign, points){
-  const type = normalizeCampaignType(campaign.type);
-  const hit = getRewardHit(campaign.rules, points);
-  if(!hit.reward) return "—";
-  if(type === "achievement" && hit.threshold != null){
-    return `${hit.threshold}pt達成：${hit.reward}`;
-  }
-  return hit.reward;
+function achievedRewards(campaign, points){
+  const rules = rulesSorted(campaign.rules);
+  return rules.filter(r => points >= r.threshold).map(r => ({
+    cost: r.threshold,
+    reward: r.reward
+  }));
 }
 
 /* ========= Totals ========= */
@@ -124,11 +111,9 @@ function computeTotalsForCampaign(campaignId){
   return rows;
 }
 
-/* ========= Delivery (per listener) ========= */
+/* ========= Delivery ========= */
 function getDeliveryMap(campaignId){
-  if (!state.delivery[campaignId] || typeof state.delivery[campaignId] !== "object") {
-    state.delivery[campaignId] = {};
-  }
+  if (!state.delivery[campaignId] || typeof state.delivery[campaignId] !== "object") state.delivery[campaignId] = {};
   return state.delivery[campaignId];
 }
 function getDeliveryStatus(campaignId, listenerName){
@@ -139,6 +124,46 @@ function setDeliveryStatus(campaignId, listenerName, status){
   const m = getDeliveryMap(campaignId);
   m[listenerName] = (status === "done") ? "done" : "open";
   saveState();
+}
+
+/* ========= Purchases (shopping) ========= */
+function getPurchaseMap(campaignId){
+  if(!state.purchases[campaignId] || typeof state.purchases[campaignId] !== "object") state.purchases[campaignId] = {};
+  return state.purchases[campaignId];
+}
+function getPurchases(campaignId, listenerName){
+  const m = getPurchaseMap(campaignId);
+  if(!Array.isArray(m[listenerName])) m[listenerName] = [];
+  return m[listenerName];
+}
+function addPurchase(campaign, listenerName, cost, reward){
+  const arr = getPurchases(campaign.id, listenerName);
+  arr.push({ cost, reward, at: new Date().toISOString() });
+  saveState();
+}
+function undoPurchase(campaign, listenerName){
+  const arr = getPurchases(campaign.id, listenerName);
+  if(arr.length>0){
+    arr.pop();
+    saveState();
+    return true;
+  }
+  return false;
+}
+function spentPoints(campaignId, listenerName){
+  const arr = getPurchases(campaignId, listenerName);
+  return arr.reduce((s,x)=> s + (x.cost||0), 0);
+}
+
+/* ========= Campaign completion rule =========
+   リスナーが1人もいない（ログなし）→未完了
+   1人でも delivery=open →未完了
+   全員 delivery=done →完了
+*/
+function isCampaignDone(campaign){
+  const totals = computeTotalsForCampaign(campaign.id);
+  if(totals.length === 0) return false;
+  return totals.every(r => getDeliveryStatus(campaign.id, r.listener_name) === "done");
 }
 
 /* ========= Routing ========= */
@@ -195,19 +220,19 @@ window.addEventListener("hashchange", ()=>{ route(); renderAll(); });
 
 /* ========= Home ========= */
 const statCampaigns = document.getElementById("statCampaigns");
-const statTasksOpen = document.getElementById("statTasksOpen");
-const statTasksDone = document.getElementById("statTasksDone");
+const statOpenCampaigns = document.getElementById("statOpenCampaigns");
+const statDoneCampaigns = document.getElementById("statDoneCampaigns");
 const overallPill = document.getElementById("overallPill");
 
 function renderHome(){
   const all = state.campaigns.length;
-  const open = state.campaigns.filter(c=>!c.is_closed).length;
-  const done = state.campaigns.filter(c=>c.is_closed).length;
+  const done = state.campaigns.filter(c=>isCampaignDone(c)).length;
+  const open = all - done;
 
   if(statCampaigns) statCampaigns.textContent = String(all);
-  if(statTasksOpen) statTasksOpen.textContent = String(open);
-  if(statTasksDone) statTasksDone.textContent = String(done);
-  if(overallPill) overallPill.textContent = open>0 ? `未完了企画 ${open}` : "未完了なし";
+  if(statOpenCampaigns) statOpenCampaigns.textContent = String(open);
+  if(statDoneCampaigns) statDoneCampaigns.textContent = String(done);
+  if(overallPill) overallPill.textContent = open>0 ? `未完了 ${open}` : "未完了なし";
 }
 
 /* ========= Rules UI ========= */
@@ -267,7 +292,6 @@ createCampaignForm?.addEventListener("submit",(e)=>{
     start_date,
     type,
     rules,
-    is_closed: false,          // デフォルト未完了
     created_at: new Date().toISOString(),
   });
 
@@ -282,6 +306,14 @@ const campaignListEl = document.getElementById("campaignList");
 const campaignSearchEl = document.getElementById("campaignSearch");
 campaignSearchEl?.addEventListener("input", renderCampaigns);
 
+function deleteCampaign(campaignId){
+  state.campaigns = state.campaigns.filter(x=>x.id!==campaignId);
+  state.logs = state.logs.filter(x=>x.campaign_id!==campaignId);
+  state.tasks = state.tasks.filter(x=>x.campaign_id!==campaignId);
+  delete state.delivery[campaignId];
+  delete state.purchases[campaignId];
+}
+
 function renderCampaigns(){
   if(!campaignListEl) return;
   const q = (campaignSearchEl?.value||"").trim().toLowerCase();
@@ -294,14 +326,9 @@ function renderCampaigns(){
 
   campaignListEl.innerHTML = list.map(c=>{
     const typeLabel = normalizeCampaignType(c.type)==="achievement" ? "達成型" : "お買い物方式";
-    const statusLabel = c.is_closed ? "完了" : "未完了";
-    const statusBadge = c.is_closed ? "✅" : "🔴";
-    const rulesSummary = rulesSorted(c.rules).slice(0,2).map(r=>{
-      return normalizeCampaignType(c.type)==="achievement"
-        ? `${r.threshold}pt達成→${escapeHtml(r.reward)}`
-        : `${r.threshold}→${escapeHtml(r.reward)}`;
-    }).join(" / ");
-
+    const done = isCampaignDone(c);
+    const statusLabel = done ? "完了" : "未完了";
+    const statusBadge = done ? "✅" : "🔴";
     return `
       <div class="item">
         <div>
@@ -311,7 +338,6 @@ function renderCampaigns(){
             <span class="badge">${typeLabel}</span>
             <span class="badge">${statusLabel}</span>
           </div>
-          <div class="muted">返礼品: ${rulesSummary || "—"}</div>
         </div>
         <div class="itemActions">
           <button class="btn ghost small" type="button" data-open="${c.id}">確認</button>
@@ -345,33 +371,26 @@ function renderCampaigns(){
 
 /* ========= Tasks Top ========= */
 const taskCampaignListEl = document.getElementById("taskCampaignList");
-const tasksCampaignSearchEl = document.getElementById("tasksCampaignSearch");
 const filterOpenBtn = document.getElementById("filterOpenCampaigns");
 const filterDoneBtn = document.getElementById("filterDoneCampaigns");
 const filterAllBtn = document.getElementById("filterAllCampaigns");
 
-tasksCampaignSearchEl?.addEventListener("input", renderTaskCampaignList);
 filterOpenBtn?.addEventListener("click", ()=>{ taskPageFilter="open"; renderTaskCampaignList(); });
 filterDoneBtn?.addEventListener("click", ()=>{ taskPageFilter="done"; renderTaskCampaignList(); });
 filterAllBtn?.addEventListener("click", ()=>{ taskPageFilter="all"; renderTaskCampaignList(); });
 
 function renderTasksTop(){
-  // ハッシュで指定された filter を尊重
-  renderGlobalTaskSearchResults();
   renderTaskCampaignList();
 }
-
 function filterCampaignsByListMode(list, campaigns){
-  if(list==="open") return campaigns.filter(c=>!c.is_closed);
-  if(list==="done") return campaigns.filter(c=>c.is_closed);
+  if(list==="open") return campaigns.filter(c=>!isCampaignDone(c));
+  if(list==="done") return campaigns.filter(c=>isCampaignDone(c));
   return campaigns;
 }
-
 function renderTaskCampaignList(){
   if(!taskCampaignListEl) return;
 
-  const q = (tasksCampaignSearchEl?.value||"").trim().toLowerCase();
-  let list = state.campaigns.filter(c => (c.name||"").toLowerCase().includes(q));
+  let list = state.campaigns.slice();
   list = filterCampaignsByListMode(taskPageFilter, list);
 
   if(!list.length){
@@ -381,8 +400,9 @@ function renderTaskCampaignList(){
 
   taskCampaignListEl.innerHTML = list.map(c=>{
     const typeLabel = normalizeCampaignType(c.type)==="achievement" ? "達成型" : "お買い物方式";
-    const statusBadge = c.is_closed ? "✅" : "🔴";
-    const statusLabel = c.is_closed ? "完了" : "未完了";
+    const done = isCampaignDone(c);
+    const statusBadge = done ? "✅" : "🔴";
+    const statusLabel = done ? "完了" : "未完了";
 
     return `
       <div class="item itemClickable" data-open="${c.id}">
@@ -393,7 +413,6 @@ function renderTaskCampaignList(){
             <span class="badge">${typeLabel}</span>
             <span class="badge">${statusLabel}</span>
           </div>
-          <div class="muted">枠タップで確認（編集は中の「編集」ボタン）</div>
         </div>
         <div class="itemActions">
           <button class="btn ghost small" type="button" data-live="${c.id}">リアルタイム編集</button>
@@ -417,76 +436,6 @@ function renderTaskCampaignList(){
   });
 }
 
-/* ========= Global task search ========= */
-const globalTaskListener = document.getElementById("globalTaskListener");
-const globalTaskFrom = document.getElementById("globalTaskFrom");
-const globalTaskTo = document.getElementById("globalTaskTo");
-const globalTaskStatus = document.getElementById("globalTaskStatus");
-const clearGlobalTaskSearch = document.getElementById("clearGlobalTaskSearch");
-const globalTaskResults = document.getElementById("globalTaskResults");
-
-function matchesDateRange(taskISO, from, to){
-  const d = byISODateOnly(taskISO);
-  if(from && d < from) return false;
-  if(to && d > to) return false;
-  return true;
-}
-
-[globalTaskListener, globalTaskFrom, globalTaskTo, globalTaskStatus].forEach(el=>{
-  el?.addEventListener("input", renderGlobalTaskSearchResults);
-  el?.addEventListener("change", renderGlobalTaskSearchResults);
-});
-clearGlobalTaskSearch?.addEventListener("click", ()=>{
-  if(globalTaskListener) globalTaskListener.value = "";
-  if(globalTaskFrom) globalTaskFrom.value = "";
-  if(globalTaskTo) globalTaskTo.value = "";
-  if(globalTaskStatus) globalTaskStatus.value = "open";
-  renderGlobalTaskSearchResults();
-});
-
-function renderGlobalTaskSearchResults(){
-  if(!globalTaskResults) return;
-
-  const q = (globalTaskListener?.value||"").trim().toLowerCase();
-  const from = (globalTaskFrom?.value||"").trim();
-  const to = (globalTaskTo?.value||"").trim();
-  const status = (globalTaskStatus?.value||"open").trim();
-
-  const tasks = state.tasks.filter(t=>{
-    if(q && !(t.listener_name||"").toLowerCase().includes(q)) return false;
-    if(!matchesDateRange(t.created_at, from, to)) return false;
-    if(status==="open" && t.status==="done") return false;
-    if(status==="done" && t.status!=="done") return false;
-    return true;
-  }).slice(0, 60);
-
-  if(!tasks.length){
-    globalTaskResults.innerHTML = `<div class="muted">該当タスクなし</div>`;
-    return;
-  }
-
-  globalTaskResults.innerHTML = tasks.map(t=>{
-    const c = state.campaigns.find(x=>x.id===t.campaign_id);
-    const cname = c ? c.name : "（削除済み企画）";
-    const created = byISODateOnly(t.created_at);
-    const link = c ? `#campaign=${c.id}` : "#tasks";
-    return `
-      <div class="taskItem">
-        <div class="taskTop">
-          <div>
-            <div class="taskTitle">${escapeHtml(t.title)}</div>
-            <div class="taskMeta">${escapeHtml(t.listener_name)} / ${created} / 状態：${escapeHtml(t.status)} / 企画：${escapeHtml(cname)}</div>
-          </div>
-          <div class="taskBtns">
-            ${c ? `<a class="btn ghost small" href="${link}">確認へ</a>
-                   <a class="btn ghost small" href="#live=${c.id}">リアルタイム</a>` : ""}
-          </div>
-        </div>
-      </div>
-    `;
-  }).join("");
-}
-
 /* ========= Campaign Confirm ========= */
 const campaignTitleEl = document.getElementById("campaignTitle");
 const campaignMetaEl = document.getElementById("campaignMeta");
@@ -504,23 +453,15 @@ const deleteCampaignBtn = document.getElementById("deleteCampaignBtn");
 const leaderboardBody = document.getElementById("leaderboardBody");
 const createTaskForm = document.getElementById("createTaskForm");
 const taskListEl = document.getElementById("taskList");
-const taskEditHint = document.getElementById("taskEditHint");
 
 function getCurrentCampaign(){
   return state.campaigns.find(c=>c.id===currentCampaignId) || null;
-}
-function deleteCampaign(campaignId){
-  state.campaigns = state.campaigns.filter(x=>x.id!==campaignId);
-  state.logs = state.logs.filter(x=>x.campaign_id!==campaignId);
-  state.tasks = state.tasks.filter(x=>x.campaign_id!==campaignId);
-  delete state.delivery[campaignId];
 }
 
 function setEditMode(on){
   editMode = !!on;
   if(campaignEditPanel) campaignEditPanel.classList.toggle("hidden", !editMode);
   if(createTaskForm) createTaskForm.classList.toggle("hidden", !editMode);
-  if(taskEditHint) taskEditHint.classList.toggle("hidden", editMode);
   if(toggleEditModeBtn) toggleEditModeBtn.textContent = editMode ? "編集を閉じる" : "編集";
   renderAll();
 }
@@ -559,7 +500,20 @@ editCampaignForm?.addEventListener("submit",(e)=>{
   renderAll();
 });
 
-/* listener rename/delete affects tasks+logs */
+function renderCampaignEditForm(c){
+  if(!editCampaignForm) return;
+  editCampaignForm.elements["name"].value = c.name;
+  editCampaignForm.elements["start_date"].value = c.start_date;
+  editCampaignForm.elements["type"].value = normalizeCampaignType(c.type);
+
+  if(!editRulesBox) return;
+  editRulesBox.innerHTML = "";
+  const rules = rulesSorted(c.rules);
+  if(rules.length===0) addRuleRow(editRulesBox, "", "");
+  else for(const r of rules) addRuleRow(editRulesBox, String(r.threshold), r.reward);
+}
+
+/* listener rename/delete affects tasks+logs+purchases+delivery */
 function renameListener(campaignId, oldName, newName){
   const oldN = (oldName||"").trim();
   const newN = (newName||"").trim();
@@ -577,27 +531,61 @@ function renameListener(campaignId, oldName, newName){
   }
   const dm = getDeliveryMap(campaignId);
   if (dm[oldN]) { dm[newN] = dm[oldN]; delete dm[oldN]; }
+
+  const pm = getPurchaseMap(campaignId);
+  if (pm[oldN]) { pm[newN] = pm[oldN]; delete pm[oldN]; }
+
   return true;
 }
 function deleteListener(campaignId, name){
   const n = (name||"").trim();
   state.logs = state.logs.filter(l=>!(l.campaign_id===campaignId && (l.listener_name||"").trim()===n));
   state.tasks = state.tasks.filter(t=>!(t.campaign_id===campaignId && (t.listener_name||"").trim()===n));
-  const dm = getDeliveryMap(campaignId);
-  delete dm[n];
+  const dm = getDeliveryMap(campaignId); delete dm[n];
+  const pm = getPurchaseMap(campaignId); delete pm[n];
 }
 
-function renderCampaignEditForm(c){
-  if(!editCampaignForm) return;
-  editCampaignForm.elements["name"].value = c.name;
-  editCampaignForm.elements["start_date"].value = c.start_date;
-  editCampaignForm.elements["type"].value = normalizeCampaignType(c.type);
+/* ===== Reward cell renderer ===== */
+function renderRewardCell(campaign, listenerName, points){
+  const type = normalizeCampaignType(campaign.type);
 
-  if(!editRulesBox) return;
-  editRulesBox.innerHTML = "";
-  const rules = rulesSorted(c.rules);
-  if(rules.length===0) addRuleRow(editRulesBox, "", "");
-  else for(const r of rules) addRuleRow(editRulesBox, String(r.threshold), r.reward);
+  if(type === "achievement"){
+    const list = achievedRewards(campaign, points);
+    if(list.length === 0) return `<div class="muted">—</div>`;
+    return `<div class="shopItems">${
+      list.map(x=>`<span class="shopItemChip">${escapeHtml(`${x.cost}pt達成：${x.reward}`)}</span>`).join("")
+    }</div>`;
+  }
+
+  // shopping
+  const rules = rulesSorted(campaign.rules).map(r=>({cost:r.threshold, reward:r.reward}));
+  const purchases = getPurchases(campaign.id, listenerName);
+  const spent = purchases.reduce((s,x)=> s + (x.cost||0), 0);
+  const remaining = points - spent;
+
+  const purchasedChips = purchases.length
+    ? `<div class="shopItems">${purchases.map(x=>`<span class="shopItemChip">${escapeHtml(`${x.cost}：${x.reward}`)}</span>`).join("")}</div>`
+    : `<div class="muted">（未購入）</div>`;
+
+  const buyButtons = rules.length
+    ? `<div class="shopBuyList">${
+        rules.map(x=>{
+          const disabled = remaining < x.cost;
+          return `<button class="shopBuyBtn" type="button" data-buy="${escapeHtml(listenerName)}" data-cost="${x.cost}" data-reward="${escapeHtml(x.reward)}" ${disabled?"disabled":""}>${escapeHtml(`${x.cost}：${x.reward}`)}</button>`;
+        }).join("")
+      }</div>`
+    : `<div class="muted">返礼品が未設定です。</div>`;
+
+  return `
+    <div class="shopBox">
+      <div class="shopRemaining">残pt：${remaining}（合計 ${points} - 使用 ${spent}）</div>
+      ${purchasedChips}
+      ${buyButtons}
+      <div class="row gap wrapBtns" style="margin-top:6px;">
+        <button class="btn ghost tiny" type="button" data-undo-buy="${escapeHtml(listenerName)}">購入を1つ取り消し</button>
+      </div>
+    </div>
+  `;
 }
 
 /* ===== 返礼品状況テーブル ===== */
@@ -616,12 +604,13 @@ function renderRewardTable(tbodyEl, campaign){
       <tr>
         <td>${escapeHtml(r.listener_name)}</td>
         <td class="right">${r.points}</td>
-        <td class="center">${escapeHtml(formatReward(campaign, r.points))}</td>
+        <td class="center">${renderRewardCell(campaign, r.listener_name, r.points)}</td>
         <td>
           <select class="input" data-delivery="${escapeHtml(r.listener_name)}">
             <option value="open" ${status==="open"?"selected":""}>未完了</option>
             <option value="done" ${status==="done"?"selected":""}>完了</option>
           </select>
+
           ${editMode ? `
             <div class="row gap wrapBtns" style="margin-top:8px;">
               <button class="btn ghost tiny" type="button" data-l-edit="${escapeHtml(r.listener_name)}">編集</button>
@@ -633,12 +622,34 @@ function renderRewardTable(tbodyEl, campaign){
     `;
   }).join("");
 
-  // 状況：常に変更可能
+  // 状況：変更
   tbodyEl.querySelectorAll("[data-delivery]").forEach(sel=>{
     sel.addEventListener("change", ()=>{
       const name = sel.getAttribute("data-delivery");
       setDeliveryStatus(campaign.id, name, sel.value);
       toast("更新");
+      // 企画の完了/未完了が変わり得るので再描画
+      renderAll();
+    });
+  });
+
+  // shopping purchase buttons
+  tbodyEl.querySelectorAll("[data-buy]").forEach(btn=>{
+    btn.addEventListener("click", ()=>{
+      const name = btn.getAttribute("data-buy");
+      const cost = parseInt(btn.getAttribute("data-cost"),10);
+      const reward = btn.getAttribute("data-reward");
+      addPurchase(campaign, name, cost, reward);
+      toast("購入");
+      renderAll();
+    });
+  });
+  tbodyEl.querySelectorAll("[data-undo-buy]").forEach(btn=>{
+    btn.addEventListener("click", ()=>{
+      const name = btn.getAttribute("data-undo-buy");
+      const ok = undoPurchase(campaign, name);
+      toast(ok ? "取り消し" : "取り消すものなし");
+      renderAll();
     });
   });
 
@@ -669,13 +680,14 @@ function renderRewardTable(tbodyEl, campaign){
   }
 }
 
-/* ===== タスク CRUD（編集モード時のみ編集ボタンを出す） ===== */
-createTaskForm?.addEventListener("submit",(e)=>{
+/* ========= Tasks CRUD ========= */
+const createTaskFormEl = document.getElementById("createTaskForm");
+createTaskFormEl?.addEventListener("submit",(e)=>{
   e.preventDefault();
   const c = getCurrentCampaign();
   if(!c) return;
 
-  const fd = new FormData(createTaskForm);
+  const fd = new FormData(createTaskFormEl);
   const listener_name = (fd.get("listener_name")||"").toString().trim();
   const title = (fd.get("title")||"").toString().trim();
   const status = (fd.get("status")||"todo").toString();
@@ -691,7 +703,7 @@ createTaskForm?.addEventListener("submit",(e)=>{
     updated_at: new Date().toISOString(),
   });
   saveState();
-  createTaskForm.reset();
+  createTaskFormEl.reset();
   renderAll();
   toast("タスク追加");
 });
@@ -700,8 +712,9 @@ function renderTaskListForCampaign(c){
   if(!taskListEl) return;
   const tasks = state.tasks.filter(t=>t.campaign_id===c.id);
 
+  // 「タスクなし」の表示は消す（何も出さない）
   if(!tasks.length){
-    taskListEl.innerHTML = `<div class="muted">タスクなし</div>`;
+    taskListEl.innerHTML = "";
     return;
   }
 
@@ -723,7 +736,7 @@ function renderTaskListForCampaign(c){
               }
               <button class="btn ghost small" type="button" data-edit="${t.id}">編集</button>
               <button class="btn danger small" type="button" data-del="${t.id}">削除</button>
-            ` : `<div class="muted">（閲覧）</div>`}
+            ` : ``}
           </div>
         </div>
       </div>
@@ -777,12 +790,14 @@ function renderTaskListForCampaign(c){
   });
 }
 
+/* ========= Campaign confirm render ========= */
 function renderCampaignConfirm(){
   const c = getCurrentCampaign();
   if(!c){ location.hash="#tasks"; return; }
 
   const typeLabel = normalizeCampaignType(c.type)==="achievement" ? "達成型" : "お買い物方式";
-  const statusLabel = c.is_closed ? "完了" : "未完了";
+  const done = isCampaignDone(c);
+  const statusLabel = done ? "完了" : "未完了";
 
   if(campaignTitleEl) campaignTitleEl.textContent = c.name;
   if(campaignMetaEl) campaignMetaEl.textContent = `開始日：${c.start_date} / 方式：${typeLabel} / 状態：${statusLabel}`;
@@ -790,13 +805,9 @@ function renderCampaignConfirm(){
 
   if(goLiveBtn) goLiveBtn.href = `#live=${c.id}`;
 
-  // 編集UI
   if(!editMode){
     if(campaignEditPanel) campaignEditPanel.classList.add("hidden");
-    if(createTaskForm) createTaskForm.classList.add("hidden");
-    if(taskEditHint) taskEditHint.classList.remove("hidden");
-  }else{
-    if(taskEditHint) taskEditHint.classList.add("hidden");
+    if(createTaskFormEl) createTaskFormEl.classList.add("hidden");
   }
 
   renderCampaignEditForm(c);
@@ -811,7 +822,6 @@ const goConfirmBtn = document.getElementById("goConfirmBtn");
 const goTaskEditBtn = document.getElementById("goTaskEditBtn");
 const liveLeaderboardBody = document.getElementById("liveLeaderboardBody");
 const rewardListBox = document.getElementById("rewardListBox");
-const endCampaignBtn = document.getElementById("endCampaignBtn");
 
 const listenerNameInput = document.getElementById("listenerName");
 const customPointsInput = document.getElementById("customPoints");
@@ -877,33 +887,22 @@ function renderRewardList(c){
     rewardListBox.innerHTML = `<div class="muted">返礼品が未設定です。</div>`;
     return;
   }
+  const type = normalizeCampaignType(c.type);
   rewardListBox.innerHTML = rules.map(r=>{
-    const label = normalizeCampaignType(c.type)==="achievement"
+    const label = (type==="achievement")
       ? `${r.threshold}pt達成：${escapeHtml(r.reward)}`
       : `${r.threshold}：${escapeHtml(r.reward)}`;
     return `<div class="rewardChip">${label}</div>`;
   }).join("");
 }
 
-endCampaignBtn?.addEventListener("click", ()=>{
-  const c = getCurrentCampaign();
-  if(!c) return;
-  if(c.is_closed) return toast("すでに完了です");
-  if(!confirm("この企画を「完了」にします。OK？")) return;
-  c.is_closed = true;
-  saveState();
-  toast("企画を完了");
-  location.hash = `#campaign=${c.id}`;
-  // 確認ページで編集モードに入りたいならここを true にできる
-  // editMode = true;
-});
-
 function renderLive(){
   const c = getCurrentCampaign();
   if(!c){ location.hash="#tasks"; return; }
 
   const typeLabel = normalizeCampaignType(c.type)==="achievement" ? "達成型" : "お買い物方式";
-  const statusLabel = c.is_closed ? "完了" : "未完了";
+  const done = isCampaignDone(c);
+  const statusLabel = done ? "完了" : "未完了";
 
   if(liveTitle) liveTitle.textContent = c.name;
   if(liveMeta) liveMeta.textContent = `開始日：${c.start_date} / 方式：${typeLabel} / 状態：${statusLabel}`;
@@ -936,6 +935,7 @@ document.getElementById("importFile")?.addEventListener("change", async (e)=>{
       logs: Array.isArray(obj.logs) ? obj.logs : [],
       tasks: Array.isArray(obj.tasks) ? obj.tasks : [],
       delivery: (obj.delivery && typeof obj.delivery === "object") ? obj.delivery : {},
+      purchases: (obj.purchases && typeof obj.purchases === "object") ? obj.purchases : {},
     };
     migrate();
     saveState();
@@ -953,10 +953,7 @@ document.getElementById("importFile")?.addEventListener("change", async (e)=>{
 function renderAll(){
   renderHome();
   renderCampaigns();
-  if((location.hash||"").startsWith("#tasks")) {
-    renderGlobalTaskSearchResults();
-    renderTaskCampaignList();
-  }
+  if((location.hash||"").startsWith("#tasks")) renderTaskCampaignList();
   if((location.hash||"").startsWith("#campaign=")) renderCampaignConfirm();
   if((location.hash||"").startsWith("#live=")) renderLive();
 }
