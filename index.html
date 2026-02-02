@@ -298,10 +298,15 @@
 
     <section class="stack">
       <form id="createTaskForm" class="grid3 hidden">
-        <label class="field">
-          <span>リスナー名</span>
-          <input name="listener_name" class="input" required />
-        </label>
+       <label class="field">
+  <span>リスナー</span>
+  <select id="listenerSelect" class="input"></select>
+</label>
+
+<label class="field">
+  <span>新しい名前（入力したら候補に追加）</span>
+  <input id="listenerNewName" class="input" placeholder="表示名" />
+</label>
         <label class="field">
           <span>内容</span>
           <input name="title" class="input" required />
