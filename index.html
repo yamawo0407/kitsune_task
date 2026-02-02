@@ -37,16 +37,16 @@
   <main id="view-home" class="wrap stack">
     <section class="hero">
       <div class="hero-title">やりたいことを選ぶ</div>
+
       <div class="choice-grid">
         <a class="choice-card" href="#tasks">
           <div class="choice-icon">✅</div>
           <div class="choice-main">タスク管理</div>
-          <div class="choice-sub">企画を選んで返礼タスクを消し込む</div>
         </a>
+
         <a class="choice-card" href="#campaigns">
           <div class="choice-icon">📌</div>
           <div class="choice-main">企画作成</div>
-          <div class="choice-sub">企画と返礼ルールを作る</div>
         </a>
       </div>
     </section>
@@ -57,19 +57,20 @@
           <div class="card-title">状況</div>
           <div class="pill" id="overallPill">—</div>
         </div>
+
         <div class="stats">
-          <div class="stat">
+          <a class="stat statLink" href="#campaigns">
             <div class="stat-num" id="statCampaigns">0</div>
             <div class="stat-label">企画</div>
-          </div>
-          <div class="stat">
+          </a>
+          <a class="stat statLink" href="#tasks?status=open">
             <div class="stat-num" id="statTasksOpen">0</div>
             <div class="stat-label">未完了タスク</div>
-          </div>
-          <div class="stat">
+          </a>
+          <a class="stat statLink" href="#tasks?status=done">
             <div class="stat-num" id="statTasksDone">0</div>
             <div class="stat-label">完了タスク</div>
-          </div>
+          </a>
         </div>
       </section>
 
@@ -90,17 +91,68 @@
     <section class="pagehead">
       <div>
         <div class="h1">タスク管理</div>
-        <div class="muted">企画一覧 → 押して詳細へ</div>
+        <div class="muted">企画を選ぶ → 確認（タスク） or リアルタイム編集</div>
       </div>
-      <div class="row gap">
+      <div class="row gap wrapBtns">
         <input id="tasksCampaignSearch" class="input" placeholder="企画名で検索" />
       </div>
     </section>
 
+    <!-- filters -->
+    <section class="card">
+      <div class="card-head">
+        <div class="card-title">表示</div>
+        <div class="muted">デフォルト：未完了あり</div>
+      </div>
+      <div class="row gap wrapBtns">
+        <button class="btn ghost small" id="filterOpenCampaigns">未完了あり</button>
+        <button class="btn ghost small" id="filterAllCampaigns">すべて</button>
+      </div>
+    </section>
+
+    <!-- Global task search -->
+    <section class="card">
+      <div class="card-head">
+        <div class="card-title">タスク検索（全企画）</div>
+        <div class="muted">リスナー名 / 日付 / 状態</div>
+      </div>
+
+      <div class="grid4">
+        <label class="field">
+          <span>リスナー</span>
+          <input id="globalTaskListener" class="input" placeholder="例：Alice" />
+        </label>
+        <label class="field">
+          <span>From</span>
+          <input id="globalTaskFrom" class="input" type="date" />
+        </label>
+        <label class="field">
+          <span>To</span>
+          <input id="globalTaskTo" class="input" type="date" />
+        </label>
+        <label class="field">
+          <span>状態</span>
+          <select id="globalTaskStatus" class="input">
+            <option value="open">未完了</option>
+            <option value="done">完了</option>
+            <option value="all">すべて</option>
+          </select>
+        </label>
+      </div>
+
+      <div class="row gap wrapBtns">
+        <button id="clearGlobalTaskSearch" class="btn ghost" type="button">検索クリア</button>
+      </div>
+
+      <div class="divider"></div>
+      <div id="globalTaskResults" class="taskList"></div>
+    </section>
+
+    <!-- campaign list -->
     <section class="card">
       <div class="card-head">
         <div class="card-title">企画一覧</div>
-        <div class="muted">🔴=未完了あり / ✅=未完了なし</div>
+        <div class="muted">枠タップで「確認」へ / 右のボタンで「リアルタイム編集」へ</div>
       </div>
       <div id="taskCampaignList" class="list"></div>
     </section>
@@ -130,7 +182,7 @@
       <section class="card">
         <div class="card-head">
           <div class="card-title">新規企画</div>
-          <div class="muted">ポイント→返礼品（複数ルール可）</div>
+          <div class="muted">返礼ルール → 返礼品</div>
         </div>
 
         <form id="createCampaignForm" class="stack">
@@ -144,10 +196,19 @@
             <input class="input" type="date" name="start_date" required />
           </label>
 
+          <label class="field">
+            <span>方式</span>
+            <select class="input" name="type">
+              <option value="achievement">達成型</option>
+              <option value="shopping">お買い物方式</option>
+            </select>
+          </label>
+
           <div class="ruleHead">
-            <div class="card-title">返礼ルール</div>
+            <div class="card-title">返礼品</div>
             <button id="addRuleRowBtn" type="button" class="btn ghost">＋行を追加</button>
           </div>
+
           <div id="rulesBox" class="rulesBox"></div>
 
           <button class="btn primary" type="submit">企画を作成</button>
@@ -156,7 +217,7 @@
     </section>
   </main>
 
-  <!-- ===== CAMPAIGN DETAIL ===== -->
+  <!-- ===== CAMPAIGN CONFIRM (tasks) ===== -->
   <main id="view-campaign" class="wrap stack hidden">
     <section class="pagehead">
       <div>
@@ -170,11 +231,13 @@
       </div>
 
       <div class="row gap wrapBtns">
+        <a id="goLiveBtn" class="btn ghost" href="#live=">リアルタイム編集へ</a>
         <button id="toggleEditCampaignBtn" class="btn ghost" type="button">企画を編集</button>
         <button id="deleteCampaignBtn" class="btn danger" type="button">企画削除</button>
       </div>
     </section>
 
+    <!-- edit panel -->
     <section class="card hidden" id="campaignEditPanel">
       <div class="card-head">
         <div class="card-title">企画編集</div>
@@ -192,8 +255,16 @@
           <input class="input" type="date" name="start_date" required />
         </label>
 
+        <label class="field">
+          <span>方式</span>
+          <select class="input" name="type">
+            <option value="achievement">達成型</option>
+            <option value="shopping">お買い物方式</option>
+          </select>
+        </label>
+
         <div class="ruleHead">
-          <div class="card-title">返礼ルール</div>
+          <div class="card-title">返礼品</div>
           <button id="editAddRuleRowBtn" type="button" class="btn ghost">＋行を追加</button>
         </div>
         <div id="editRulesBox" class="rulesBox"></div>
@@ -205,86 +276,30 @@
       </form>
     </section>
 
-    <section class="grid2 top">
-      <section class="card">
-        <div class="card-head">
-          <div class="card-title">リスナー集計</div>
-          <div class="muted">合計pt → 返礼品（自動判定） / 編集・削除OK</div>
-        </div>
+    <section class="card">
+      <div class="card-head">
+        <div class="card-title">リスナー集計</div>
+        <div class="muted">編集・削除OK</div>
+      </div>
 
-        <table class="table">
-          <thead>
-            <tr>
-              <th>名前</th>
-              <th class="right">合計pt</th>
-              <th>返礼品</th>
-              <th>操作</th>
-            </tr>
-          </thead>
-          <tbody id="leaderboardBody"></tbody>
-        </table>
-      </section>
-
-      <section class="card">
-        <div class="card-head">
-          <div class="card-title">ライブ入力（内部入力）</div>
-          <div class="muted">加算・Undo・訂正</div>
-        </div>
-
-        <div class="stack">
-          <label class="field">
-            <span>リスナー名</span>
-            <input id="listenerName" class="input" placeholder="表示名" />
-          </label>
-
-          <div class="row wrapBtns">
-            <button class="btn" type="button" data-add="100">+100</button>
-            <button class="btn" type="button" data-add="300">+300</button>
-            <button class="btn" type="button" data-add="500">+500</button>
-            <button class="btn" type="button" data-add="1000">+1000</button>
-          </div>
-
-          <div class="row gap">
-            <input id="customPoints" class="input" type="number" placeholder="任意pt" />
-            <button id="addCustomBtn" class="btn primary" type="button">加算</button>
-          </div>
-
-          <div class="row gap wrapBtns">
-            <button id="undoBtn" class="btn ghost" type="button">Undo（直近1件）</button>
-            <button id="subtractBtn" class="btn ghost" type="button">減算（訂正）</button>
-          </div>
-
-          <div id="liveMsg" class="muted"></div>
-        </div>
-      </section>
+      <table class="table">
+        <thead>
+          <tr>
+            <th>名前</th>
+            <th class="right">合計pt</th>
+            <th>返礼品</th>
+            <th>操作</th>
+          </tr>
+        </thead>
+        <tbody id="leaderboardBody"></tbody>
+      </table>
     </section>
 
     <section class="card">
       <div class="card-head">
         <div class="card-title">タスク</div>
-        <div class="muted">検索：リスナー / 日付</div>
+        <div class="muted">（検索はタスク管理トップに移動済み）</div>
       </div>
-
-      <div class="grid3">
-        <label class="field">
-          <span>リスナー検索</span>
-          <input id="taskSearchListener" class="input" placeholder="例：Alice" />
-        </label>
-        <label class="field">
-          <span>日付 From</span>
-          <input id="taskSearchFrom" class="input" type="date" />
-        </label>
-        <label class="field">
-          <span>日付 To</span>
-          <input id="taskSearchTo" class="input" type="date" />
-        </label>
-        <div class="field">
-          <span>&nbsp;</span>
-          <button id="clearTaskSearch" class="btn ghost" type="button">検索クリア</button>
-        </div>
-      </div>
-
-      <div class="divider"></div>
 
       <form id="createTaskForm" class="grid3">
         <label class="field">
@@ -312,12 +327,82 @@
       </form>
 
       <div class="divider"></div>
-
       <div id="taskList" class="taskList"></div>
     </section>
   </main>
 
-  <!-- Debug status: app.js が動けば OK 表示 -->
+  <!-- ===== LIVE EDIT ONLY ===== -->
+  <main id="view-live" class="wrap stack hidden">
+    <section class="pagehead">
+      <div>
+        <div class="row gap wrapBtns">
+          <a class="btn ghost" href="#tasks">← タスク管理へ</a>
+          <a id="goConfirmBtn" class="btn ghost" href="#campaign=">確認（タスク）へ</a>
+          <div class="pill" id="liveCampaignPill">リアルタイム編集</div>
+        </div>
+        <div class="h1" id="liveTitle"></div>
+        <div class="muted" id="liveMeta"></div>
+      </div>
+    </section>
+
+    <section class="grid2 top">
+      <section class="card">
+        <div class="card-head">
+          <div class="card-title">リスナー集計</div>
+          <div class="muted">（返礼品：自動判定）</div>
+        </div>
+
+        <table class="table">
+          <thead>
+            <tr>
+              <th>名前</th>
+              <th class="right">合計pt</th>
+              <th>返礼品</th>
+              <th>操作</th>
+            </tr>
+          </thead>
+          <tbody id="liveLeaderboardBody"></tbody>
+        </table>
+      </section>
+
+      <section class="card">
+        <div class="card-head">
+          <div class="card-title">ライブ入力</div>
+          <div class="muted">加算 / ひとつもどる / 任意の減算</div>
+        </div>
+
+        <div class="stack">
+          <label class="field">
+            <span>リスナー名</span>
+            <input id="listenerName" class="input" placeholder="表示名" />
+          </label>
+
+          <div class="row wrapBtns">
+            <button class="btn" type="button" data-add="100">+100</button>
+            <button class="btn" type="button" data-add="300">+300</button>
+            <button class="btn" type="button" data-add="500">+500</button>
+            <button class="btn" type="button" data-add="1000">+1000</button>
+            <button class="btn" type="button" data-add="5000">+5000</button>
+            <button class="btn" type="button" data-add="10000">+10000</button>
+            <button class="btn" type="button" data-add="30000">+30000</button>
+          </div>
+
+          <div class="row gap">
+            <input id="customPoints" class="input" type="number" placeholder="任意pt（加算 or 減算）" />
+            <button id="addCustomBtn" class="btn primary" type="button">加算</button>
+          </div>
+
+          <div class="row gap wrapBtns">
+            <button id="undoBtn" class="btn ghost" type="button">ひとつもどる</button>
+            <button id="subtractBtn" class="btn ghost" type="button">任意の減算</button>
+          </div>
+
+          <div id="liveMsg" class="muted"></div>
+        </div>
+      </section>
+    </section>
+  </main>
+
   <div id="jsStatus" class="jsStatus">JS: ...</div>
   <div id="toast" class="toast hidden"></div>
 
