@@ -1,9 +1,12 @@
 "use strict";
 
+/* =========================
+   基本
+========================= */
 const jsStatus = document.getElementById("jsStatus");
 if (jsStatus) jsStatus.textContent = "JS: OK";
 
-const STORAGE_KEY = "reward_task_manager_v13_1";
+const STORAGE_KEY = "reward_task_manager_v14";
 
 function uid(){ return Math.random().toString(16).slice(2) + Date.now().toString(16); }
 function escapeHtml(s){
@@ -12,7 +15,19 @@ function escapeHtml(s){
   }[c]));
 }
 
-/* ---------- state ---------- */
+const toastEl = document.getElementById("toast");
+let toastTimer = null;
+function toast(msg){
+  if(!toastEl) return;
+  toastEl.textContent = msg;
+  toastEl.classList.remove("hidden");
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(()=>toastEl.classList.add("hidden"), 1200);
+}
+
+/* =========================
+   state（localStorage）
+========================= */
 function loadState(){
   try{
     const raw = localStorage.getItem(STORAGE_KEY);
@@ -57,18 +72,9 @@ function migrate(){
 }
 migrate(); saveState();
 
-/* ---------- toast ---------- */
-const toastEl = document.getElementById("toast");
-let toastTimer = null;
-function toast(msg){
-  if(!toastEl) return;
-  toastEl.textContent = msg;
-  toastEl.classList.remove("hidden");
-  clearTimeout(toastTimer);
-  toastTimer = setTimeout(()=>toastEl.classList.add("hidden"), 1200);
-}
-
-/* ---------- views ---------- */
+/* =========================
+   画面切替（SPA）
+========================= */
 const views = {
   home: document.getElementById("view-home"),
   tasks: document.getElementById("view-tasks"),
@@ -76,16 +82,17 @@ const views = {
   campaign: document.getElementById("view-campaign"),
   live: document.getElementById("view-live"),
 };
-function showView(name){
-  Object.entries(views).forEach(([k, el])=> el && el.classList.toggle("hidden", k !== name));
-  setActiveNav(name);
-}
+
 function setActiveNav(viewName){
   document.querySelectorAll(".navlink").forEach(a=>a.classList.remove("active"));
   const map = { home:"home", tasks:"tasks", campaigns:"campaigns", campaign:"tasks", live:"tasks" };
   const key = map[viewName] || "home";
   const el = document.querySelector(`.navlink[data-nav="${key}"]`);
   if(el) el.classList.add("active");
+}
+function showView(name){
+  Object.entries(views).forEach(([k, el])=> el && el.classList.toggle("hidden", k !== name));
+  setActiveNav(name);
 }
 function parseHashParts(){
   const raw = (location.hash || "#home").slice(1);
@@ -94,139 +101,13 @@ function parseHashParts(){
   return { path: path || "home", params };
 }
 
-/* ---------- routing state ---------- */
 let currentCampaignId = null;
 let taskPageFilter = "all";
-let editMode = false;
 
 function getCurrentCampaign(){
   return state.campaigns.find(c=>c.id===currentCampaignId) || null;
 }
 
-/* ---------- helpers ---------- */
-function rulesSorted(rules){
-  return (Array.isArray(rules) ? rules : [])
-    .filter(r => Number.isFinite(r.threshold) && (r.reward||"").trim())
-    .slice()
-    .sort((a,b)=>a.threshold-b.threshold);
-}
-function achievedRewards(campaign, points){
-  const rules = rulesSorted(campaign.rules);
-  return rules.filter(r => points >= r.threshold).map(r => ({ cost:r.threshold, reward:r.reward }));
-}
-function computeTotalsForCampaign(campaignId){
-  const map = new Map();
-  for(const log of state.logs.filter(l=>l.campaign_id===campaignId)){
-    const name = (log.listener_name||"").trim();
-    if(!name) continue;
-    map.set(name, (map.get(name)||0) + (log.delta_points||0));
-  }
-  const rows = Array.from(map.entries()).map(([listener_name, points])=>({listener_name, points}));
-  rows.sort((a,b)=> b.points - a.points || a.listener_name.localeCompare(b.listener_name));
-  return rows;
-}
-
-/* ---------- listener pool (for select) ---------- */
-function getListenerPool(campaignId){
-  if(!state.listener_pool[campaignId] || !Array.isArray(state.listener_pool[campaignId])){
-    state.listener_pool[campaignId] = [];
-  }
-  return state.listener_pool[campaignId];
-}
-function addListenerToPool(campaignId, name){
-  const n = (name||"").trim();
-  if(!n) return;
-  const pool = getListenerPool(campaignId);
-  if(!pool.includes(n)){
-    pool.push(n);
-    pool.sort((a,b)=>a.localeCompare(b));
-    saveState();
-  }
-}
-
-/* ---------- delivery status ---------- */
-function getDeliveryMap(campaignId){
-  if (!state.delivery[campaignId] || typeof state.delivery[campaignId] !== "object") state.delivery[campaignId] = {};
-  return state.delivery[campaignId];
-}
-function getDeliveryStatus(campaignId, listenerName){
-  const m = getDeliveryMap(campaignId);
-  return m[listenerName] === "done" ? "done" : "open";
-}
-function setDeliveryStatus(campaignId, listenerName, status){
-  const m = getDeliveryMap(campaignId);
-  m[listenerName] = (status === "done") ? "done" : "open";
-  saveState();
-}
-
-/* ---------- purchases (shopping) ---------- */
-function getPurchaseMap(campaignId){
-  if(!state.purchases[campaignId] || typeof state.purchases[campaignId] !== "object") state.purchases[campaignId] = {};
-  return state.purchases[campaignId];
-}
-function getPurchases(campaignId, listenerName){
-  const m = getPurchaseMap(campaignId);
-  if(!Array.isArray(m[listenerName])) m[listenerName] = [];
-  return m[listenerName];
-}
-function addPurchase(campaign, listenerName, cost, reward){
-  const arr = getPurchases(campaign.id, listenerName);
-  arr.push({ cost, reward, at: new Date().toISOString() });
-  saveState();
-}
-function undoPurchase(campaign, listenerName){
-  const arr = getPurchases(campaign.id, listenerName);
-  if(arr.length>0){ arr.pop(); saveState(); return true; }
-  return false;
-}
-
-/* ---------- gacha history ---------- */
-function getGachaCampaignMap(campaignId){
-  if(!state.gacha_history[campaignId] || typeof state.gacha_history[campaignId] !== "object"){
-    state.gacha_history[campaignId] = {};
-  }
-  return state.gacha_history[campaignId];
-}
-function getGachaList(campaignId, listenerName){
-  const m = getGachaCampaignMap(campaignId);
-  if(!Array.isArray(m[listenerName])) m[listenerName] = [];
-  return m[listenerName];
-}
-function addGachaResult(campaignId, listenerName, ptUsed, results){
-  const list = getGachaList(campaignId, listenerName);
-  list.push({ at: new Date().toISOString(), ptUsed, results: results.slice() });
-  saveState();
-}
-function gachaSummaryChips(campaignId, listenerName){
-  const list = getGachaList(campaignId, listenerName);
-  if(!list.length) return [];
-  const count = new Map();
-  for(const r of list){
-    for(const item of (r.results||[])){
-      count.set(item, (count.get(item)||0)+1);
-    }
-  }
-  return Array.from(count.entries())
-    .sort((a,b)=> b[1]-a[1] || a[0].localeCompare(b[0]))
-    .map(([name, n])=>`${name} ×${n}`);
-}
-
-/* ---------- campaign done ---------- */
-function isCampaignDone(campaign){
-  const totals = computeTotalsForCampaign(campaign.id);
-  if(totals.length === 0) return false;
-  return totals.every(r => getDeliveryStatus(campaign.id, r.listener_name) === "done");
-}
-function campaignSortDesc(a,b){
-  const ad = (a.start_date||"");
-  const bd = (b.start_date||"");
-  if(ad !== bd) return bd.localeCompare(ad);
-  const ac = a.created_at || "";
-  const bc = b.created_at || "";
-  return bc.localeCompare(ac);
-}
-
-/* ---------- route ---------- */
 function route(){
   const { path, params } = parseHashParts();
 
@@ -234,9 +115,8 @@ function route(){
     const id = path.split("=")[1];
     if(id && state.campaigns.some(c=>c.id===id)){
       currentCampaignId = id;
-      editMode = false;
       showView("campaign");
-      renderCampaignConfirm();
+      renderCampaign();
       return;
     }
     location.hash = "#tasks";
@@ -274,11 +154,145 @@ function route(){
 }
 window.addEventListener("hashchange", ()=>{ route(); renderAll(); });
 
-/* ---------- HOME ---------- */
+/* =========================
+   計算系
+========================= */
+function rulesSorted(rules){
+  return (Array.isArray(rules) ? rules : [])
+    .filter(r => Number.isFinite(r.threshold) && (r.reward||"").trim())
+    .slice()
+    .sort((a,b)=>a.threshold-b.threshold);
+}
+function achievedRewards(campaign, points){
+  const rules = rulesSorted(campaign.rules);
+  return rules.filter(r => points >= r.threshold).map(r => ({ cost:r.threshold, reward:r.reward }));
+}
+function computeTotalsForCampaign(campaignId){
+  const map = new Map();
+  for(const log of state.logs.filter(l=>l.campaign_id===campaignId)){
+    const name = (log.listener_name||"").trim();
+    if(!name) continue;
+    map.set(name, (map.get(name)||0) + (log.delta_points||0));
+  }
+  const rows = Array.from(map.entries()).map(([listener_name, points])=>({listener_name, points}));
+  rows.sort((a,b)=> b.points - a.points || a.listener_name.localeCompare(b.listener_name));
+  return rows;
+}
+
+function getDeliveryMap(campaignId){
+  if (!state.delivery[campaignId] || typeof state.delivery[campaignId] !== "object") state.delivery[campaignId] = {};
+  return state.delivery[campaignId];
+}
+function getDeliveryStatus(campaignId, listenerName){
+  const m = getDeliveryMap(campaignId);
+  return m[listenerName] === "done" ? "done" : "open";
+}
+function setDeliveryStatus(campaignId, listenerName, status){
+  const m = getDeliveryMap(campaignId);
+  m[listenerName] = (status === "done") ? "done" : "open";
+  saveState();
+}
+
+/* 企画完了判定：1人でも未完了なら未完了 */
+function isCampaignDone(campaign){
+  const totals = computeTotalsForCampaign(campaign.id);
+  if(totals.length === 0) return false;
+  return totals.every(r => getDeliveryStatus(campaign.id, r.listener_name) === "done");
+}
+
+function campaignSortDesc(a,b){
+  const ad = (a.start_date||"");
+  const bd = (b.start_date||"");
+  if(ad !== bd) return bd.localeCompare(ad);
+  const ac = a.created_at || "";
+  const bc = b.created_at || "";
+  return bc.localeCompare(ac);
+}
+
+/* =========================
+   listener pool（select候補）
+========================= */
+function getListenerPool(campaignId){
+  if(!state.listener_pool[campaignId] || !Array.isArray(state.listener_pool[campaignId])){
+    state.listener_pool[campaignId] = [];
+  }
+  return state.listener_pool[campaignId];
+}
+function addListenerToPool(campaignId, name){
+  const n = (name||"").trim();
+  if(!n) return;
+  const pool = getListenerPool(campaignId);
+  if(!pool.includes(n)){
+    pool.push(n);
+    pool.sort((a,b)=>a.localeCompare(b));
+    saveState();
+  }
+}
+
+/* =========================
+   お買い物方式（購入履歴）
+========================= */
+function getPurchaseMap(campaignId){
+  if(!state.purchases[campaignId] || typeof state.purchases[campaignId] !== "object") state.purchases[campaignId] = {};
+  return state.purchases[campaignId];
+}
+function getPurchases(campaignId, listenerName){
+  const m = getPurchaseMap(campaignId);
+  if(!Array.isArray(m[listenerName])) m[listenerName] = [];
+  return m[listenerName];
+}
+function addPurchase(campaign, listenerName, cost, reward){
+  const arr = getPurchases(campaign.id, listenerName);
+  arr.push({ cost, reward, at: new Date().toISOString() });
+  saveState();
+}
+function undoPurchase(campaign, listenerName){
+  const arr = getPurchases(campaign.id, listenerName);
+  if(arr.length>0){ arr.pop(); saveState(); return true; }
+  return false;
+}
+
+/* =========================
+   ガチャ履歴
+========================= */
+function getGachaCampaignMap(campaignId){
+  if(!state.gacha_history[campaignId] || typeof state.gacha_history[campaignId] !== "object"){
+    state.gacha_history[campaignId] = {};
+  }
+  return state.gacha_history[campaignId];
+}
+function getGachaList(campaignId, listenerName){
+  const m = getGachaCampaignMap(campaignId);
+  if(!Array.isArray(m[listenerName])) m[listenerName] = [];
+  return m[listenerName];
+}
+function addGachaResult(campaignId, listenerName, ptUsed, results){
+  const list = getGachaList(campaignId, listenerName);
+  list.push({ at: new Date().toISOString(), ptUsed, results: results.slice() });
+  saveState();
+}
+function gachaSummaryChips(campaignId, listenerName){
+  const list = getGachaList(campaignId, listenerName);
+  if(!list.length) return [];
+  const count = new Map();
+  for(const r of list){
+    for(const item of (r.results||[])){
+      count.set(item, (count.get(item)||0)+1);
+    }
+  }
+  return Array.from(count.entries())
+    .sort((a,b)=> b[1]-a[1] || a[0].localeCompare(b[0]))
+    .map(([name, n])=>`${name} ×${n}`);
+}
+
+/* =========================
+   HOME
+========================= */
 const statCampaigns = document.getElementById("statCampaigns");
 const statOpenCampaigns = document.getElementById("statOpenCampaigns");
 const statDoneCampaigns = document.getElementById("statDoneCampaigns");
 const overallPill = document.getElementById("overallPill");
+
 function renderHome(){
   const all = state.campaigns.length;
   const done = state.campaigns.filter(c=>isCampaignDone(c)).length;
@@ -290,7 +304,9 @@ function renderHome(){
   if(overallPill) overallPill.textContent = open>0 ? `未完了 ${open}` : "未完了なし";
 }
 
-/* ---------- rules UI ---------- */
+/* =========================
+   企画作成：ルール入力UI
+========================= */
 function addRuleRow(container, threshold="", reward=""){
   const el = document.createElement("div");
   el.className = "ruleRow";
@@ -322,7 +338,6 @@ function collectRulesFrom(container){
   return rules;
 }
 
-/* ---------- gacha UI ---------- */
 function addGachaRow(container, name="", rate=""){
   const el = document.createElement("div");
   el.className = "ruleRow";
@@ -353,7 +368,13 @@ function collectGachaItemsFrom(container){
   return items;
 }
 
-/* ---------- create campaign toggle ---------- */
+/* =========================
+   企画作成（画面）
+========================= */
+const campaignListEl = document.getElementById("campaignList");
+const campaignSearchEl = document.getElementById("campaignSearch");
+
+const createCampaignForm = document.getElementById("createCampaignForm");
 const createTypeSelect = document.getElementById("createTypeSelect");
 const createRulesSection = document.getElementById("createRulesSection");
 const createGachaSection = document.getElementById("createGachaSection");
@@ -367,6 +388,7 @@ function setCreateTypeUI(type){
   createRulesSection?.classList.toggle("hidden", isGacha);
   createGachaSection?.classList.toggle("hidden", !isGacha);
 }
+
 createTypeSelect?.addEventListener("change", ()=> setCreateTypeUI(createTypeSelect.value));
 
 addRuleRowBtn?.addEventListener("click", ()=> rulesBox && addRuleRow(rulesBox, "", ""));
@@ -374,6 +396,7 @@ if(rulesBox && rulesBox.children.length===0){
   addRuleRow(rulesBox, "1000", "デジグッズA");
   addRuleRow(rulesBox, "3000", "デジグッズB");
 }
+
 addGachaRowBtn?.addEventListener("click", ()=> gachaItemsBox && addGachaRow(gachaItemsBox, "", ""));
 if(gachaItemsBox && gachaItemsBox.children.length===0){
   addGachaRow(gachaItemsBox, "SSR", "1");
@@ -381,8 +404,6 @@ if(gachaItemsBox && gachaItemsBox.children.length===0){
   addGachaRow(gachaItemsBox, "R", "90");
 }
 
-/* ---------- create campaign ---------- */
-const createCampaignForm = document.getElementById("createCampaignForm");
 createCampaignForm?.addEventListener("submit",(e)=>{
   e.preventDefault();
   const fd = new FormData(createCampaignForm);
@@ -392,7 +413,7 @@ createCampaignForm?.addEventListener("submit",(e)=>{
   const type = normalizeCampaignType((fd.get("type")||"achievement").toString());
   if(!name || !start_date) return;
 
-  let campaign = {
+  const campaign = {
     id: uid(),
     name,
     start_date,
@@ -409,8 +430,7 @@ createCampaignForm?.addEventListener("submit",(e)=>{
     campaign.gacha = { singleCost, multiCost, multiCount, items };
     ensureGacha(campaign);
   }else{
-    const rules = rulesBox ? collectRulesFrom(rulesBox) : [];
-    campaign.rules = rules;
+    campaign.rules = rulesBox ? collectRulesFrom(rulesBox) : [];
   }
 
   state.campaigns.unshift(campaign);
@@ -426,9 +446,6 @@ createCampaignForm?.addEventListener("submit",(e)=>{
   toast("作成");
 });
 
-/* ---------- campaigns list ---------- */
-const campaignListEl = document.getElementById("campaignList");
-const campaignSearchEl = document.getElementById("campaignSearch");
 campaignSearchEl?.addEventListener("input", renderCampaigns);
 
 function deleteCampaign(campaignId){
@@ -462,10 +479,7 @@ function renderCampaigns(){
       <div class="item">
         <div>
           <div><strong>${escapeHtml(c.name)}</strong></div>
-          <div class="badgeRow">
-            <span class="badge">${escapeHtml(c.start_date)}</span>
-            <span class="badge">${statusLabel}</span>
-          </div>
+          <div class="muted">${escapeHtml(c.start_date)} / ${statusLabel}</div>
         </div>
         <div class="itemActions">
           <button class="btn ghost small" type="button" data-open="${c.id}">確認</button>
@@ -497,21 +511,20 @@ function renderCampaigns(){
   });
 }
 
-/* ---------- TASKS ---------- */
+/* =========================
+   タスク管理（企画一覧）
+========================= */
 const taskCampaignListEl = document.getElementById("taskCampaignList");
-const filterAllBtn = document.getElementById("filterAllCampaigns");
-const filterOpenBtn = document.getElementById("filterOpenCampaigns");
-const filterDoneBtn = document.getElementById("filterDoneCampaigns");
-
-filterAllBtn?.addEventListener("click", ()=>{ taskPageFilter="all"; renderTaskCampaignList(); });
-filterOpenBtn?.addEventListener("click", ()=>{ taskPageFilter="open"; renderTaskCampaignList(); });
-filterDoneBtn?.addEventListener("click", ()=>{ taskPageFilter="done"; renderTaskCampaignList(); });
+document.getElementById("filterAllCampaigns")?.addEventListener("click", ()=>{ taskPageFilter="all"; renderTaskCampaignList(); });
+document.getElementById("filterOpenCampaigns")?.addEventListener("click", ()=>{ taskPageFilter="open"; renderTaskCampaignList(); });
+document.getElementById("filterDoneCampaigns")?.addEventListener("click", ()=>{ taskPageFilter="done"; renderTaskCampaignList(); });
 
 function filterCampaignsByListMode(list, campaigns){
   if(list==="open") return campaigns.filter(c=>!isCampaignDone(c));
   if(list==="done") return campaigns.filter(c=>isCampaignDone(c));
   return campaigns;
 }
+
 function renderTaskCampaignList(){
   if(!taskCampaignListEl) return;
 
@@ -531,10 +544,7 @@ function renderTaskCampaignList(){
       <div class="item itemClickable" data-open="${c.id}">
         <div>
           <div><strong>${escapeHtml(c.name)}</strong></div>
-          <div class="badgeRow">
-            <span class="badge">${escapeHtml(c.start_date)}</span>
-            <span class="badge">${statusLabel}</span>
-          </div>
+          <div class="muted">${escapeHtml(c.start_date)} / ${statusLabel}</div>
         </div>
         <div class="itemActions">
           <div style="font-size:18px;">${statusBadge}</div>
@@ -548,36 +558,14 @@ function renderTaskCampaignList(){
   });
 }
 
-/* ---------- Campaign confirm ---------- */
+/* =========================
+   返礼品状況一覧（campaign）
+========================= */
 const campaignTitleEl = document.getElementById("campaignTitle");
 const campaignMetaEl = document.getElementById("campaignMeta");
 const campaignStatusPill = document.getElementById("campaignStatusPill");
 const goLiveBtn = document.getElementById("goLiveBtn");
-const toggleEditModeBtn = document.getElementById("toggleEditModeBtn");
-const campaignEditPanel = document.getElementById("campaignEditPanel");
-const editCampaignForm = document.getElementById("editCampaignForm");
-const closeEditCampaignBtn = document.getElementById("closeEditCampaignBtn");
-const deleteCampaignBtn = document.getElementById("deleteCampaignBtn");
 const leaderboardBody = document.getElementById("leaderboardBody");
-
-function setEditMode(on){
-  editMode = !!on;
-  campaignEditPanel?.classList.toggle("hidden", !editMode);
-  if(toggleEditModeBtn) toggleEditModeBtn.textContent = editMode ? "編集を閉じる" : "編集";
-  renderAll();
-}
-toggleEditModeBtn?.addEventListener("click", ()=> setEditMode(!editMode));
-closeEditCampaignBtn?.addEventListener("click", ()=> setEditMode(false));
-
-deleteCampaignBtn?.addEventListener("click", ()=>{
-  const c = getCurrentCampaign();
-  if(!c) return;
-  if(!confirm(`「${c.name}」を削除します。OK？`)) return;
-  deleteCampaign(c.id);
-  saveState();
-  toast("削除");
-  location.hash = "#tasks";
-});
 
 function renderRewardCell(campaign, listenerName, points){
   const type = normalizeCampaignType(campaign.type);
@@ -594,6 +582,7 @@ function renderRewardCell(campaign, listenerName, points){
     return `<div class="shopItems">${list.map(x=>`<span class="shopItemChip">${escapeHtml(`${x.cost}pt達成：${x.reward}`)}</span>`).join("")}</div>`;
   }
 
+  // shopping
   const rules = rulesSorted(campaign.rules).map(r=>({cost:r.threshold, reward:r.reward}));
   const purchases = getPurchases(campaign.id, listenerName);
   const spent = purchases.reduce((s,x)=> s + (x.cost||0), 0);
@@ -657,6 +646,7 @@ function renderRewardTable(tbodyEl, campaign){
     });
   });
 
+  // shopping buy buttons
   tbodyEl.querySelectorAll("[data-buy]").forEach(btn=>{
     btn.addEventListener("click", ()=>{
       const name = btn.getAttribute("data-buy");
@@ -677,7 +667,7 @@ function renderRewardTable(tbodyEl, campaign){
   });
 }
 
-function renderCampaignConfirm(){
+function renderCampaign(){
   const c = getCurrentCampaign();
   if(!c){ location.hash="#tasks"; return; }
 
@@ -692,11 +682,12 @@ function renderCampaignConfirm(){
   renderRewardTable(leaderboardBody, c);
 }
 
-/* ---------- LIVE (select化) ---------- */
+/* =========================
+   LIVE（リアルタイム）
+========================= */
 const liveTitle = document.getElementById("liveTitle");
 const liveMeta = document.getElementById("liveMeta");
 const goConfirmBtn = document.getElementById("goConfirmBtn");
-const goTaskEditBtn = document.getElementById("goTaskEditBtn");
 const liveLeaderboardBody = document.getElementById("liveLeaderboardBody");
 const rewardListBox = document.getElementById("rewardListBox");
 const liveGachaCard = document.getElementById("liveGachaCard");
@@ -766,24 +757,6 @@ function getActiveListenerName(){
   return (listenerSelect?.value || "").trim();
 }
 
-/* live input buttons */
-document.querySelectorAll("[data-add]").forEach(btn=>{
-  btn.addEventListener("click", ()=> addLog(parseInt(btn.getAttribute("data-add"),10)));
-});
-document.getElementById("addCustomBtn")?.addEventListener("click", ()=>{
-  const v = parseInt(customPointsInput.value,10);
-  if(!v) return;
-  addLog(v);
-  customPointsInput.value = "";
-});
-document.getElementById("subtractBtn")?.addEventListener("click", ()=>{
-  const v = parseInt(customPointsInput.value,10);
-  if(!v) return;
-  addLog(-Math.abs(v));
-  customPointsInput.value = "";
-});
-document.getElementById("undoBtn")?.addEventListener("click", ()=> undoLastLog());
-
 function addLog(delta){
   const c = getCurrentCampaign();
   if(!c) return;
@@ -822,7 +795,24 @@ function undoLastLog(){
   }
 }
 
-/* reward list */
+document.querySelectorAll("[data-add]").forEach(btn=>{
+  btn.addEventListener("click", ()=> addLog(parseInt(btn.getAttribute("data-add"),10)));
+});
+document.getElementById("addCustomBtn")?.addEventListener("click", ()=>{
+  const v = parseInt(customPointsInput.value,10);
+  if(!v) return;
+  addLog(v);
+  customPointsInput.value = "";
+});
+document.getElementById("subtractBtn")?.addEventListener("click", ()=>{
+  const v = parseInt(customPointsInput.value,10);
+  if(!v) return;
+  addLog(-Math.abs(v));
+  customPointsInput.value = "";
+});
+document.getElementById("undoBtn")?.addEventListener("click", ()=> undoLastLog());
+
+/* 返礼品一覧 */
 function renderRewardList(c){
   if(!rewardListBox) return;
 
@@ -848,7 +838,7 @@ function renderRewardList(c){
     : `<div class="muted">返礼品なし</div>`;
 }
 
-/* GACHA */
+/* ガチャ */
 const gachaPtInput = document.getElementById("gachaPtInput");
 const gachaRollBtn = document.getElementById("gachaRollBtn");
 const gachaResultBox = document.getElementById("gachaResultBox");
@@ -858,7 +848,6 @@ function calcGachaPulls(pt, g){
   const singleCost = Math.max(0, Number(g.singleCost||0));
   const multiCost = Math.max(0, Number(g.multiCost||0));
   const multiCount = Math.max(0, Number(g.multiCount||0));
-
   if(pt <= 0 || singleCost <= 0) return { total:0 };
 
   let remain = pt;
@@ -871,6 +860,7 @@ function calcGachaPulls(pt, g){
   const total = multiTimes * (multiCount||0) + singleTimes;
   return { total };
 }
+
 function pickGachaItem(items){
   const cleaned = items
     .filter(x => x && x.name && Number.isFinite(Number(x.rate)) && Number(x.rate) > 0)
@@ -907,6 +897,7 @@ function rollGacha(user, pt){
     results.push(pickGachaItem(c.gacha.items || []) ?? "（景品未設定）");
   }
 
+  // 使用ptはログに加算として入れる（投げたptとして扱う）
   state.logs.push({
     id: uid(),
     campaign_id: c.id,
@@ -917,6 +908,7 @@ function rollGacha(user, pt){
 
   addGachaResult(c.id, user, pt, results);
 
+  // 番号なし、被りは×n、使用pt表記なし
   const count = new Map();
   for(const r of results) count.set(r, (count.get(r) || 0) + 1);
   const lines = Array.from(count.entries())
@@ -965,12 +957,13 @@ gachaCopyBtn?.addEventListener("click", async ()=>{
   }
 });
 
-function renderGachaCard(c){
+function renderGachaVisibility(c){
   const isGacha = normalizeCampaignType(c.type) === "gacha";
   liveGachaCard?.classList.toggle("hidden", !isGacha);
   liveInputCard?.classList.toggle("hidden", isGacha);
 }
 
+/* LIVE描画 */
 function renderLive(){
   const c = getCurrentCampaign();
   if(!c){ location.hash="#tasks"; return; }
@@ -981,16 +974,18 @@ function renderLive(){
   if(liveTitle) liveTitle.textContent = c.name;
   if(liveMeta) liveMeta.textContent = `${c.start_date} / ${statusLabel}`;
   if(goConfirmBtn) goConfirmBtn.href = `#campaign=${c.id}`;
-  if(goTaskEditBtn) goTaskEditBtn.href = `#campaign=${c.id}`;
 
-  renderGachaCard(c);
+  renderGachaVisibility(c);
   renderRewardList(c);
   renderRewardTable(liveLeaderboardBody, c);
   renderListenerSelects(c.id);
+
   setLiveMsg("");
 }
 
-/* ---------- backup/restore ---------- */
+/* =========================
+   バックアップ / 復元
+========================= */
 document.getElementById("exportBtn")?.addEventListener("click", ()=>{
   const blob = new Blob([JSON.stringify(state,null,2)], {type:"application/json"});
   const a = document.createElement("a");
@@ -1000,6 +995,7 @@ document.getElementById("exportBtn")?.addEventListener("click", ()=>{
   URL.revokeObjectURL(a.href);
   toast("バックアップ");
 });
+
 document.getElementById("importFile")?.addEventListener("change", async (e)=>{
   const file = e.target.files?.[0];
   if(!file) return;
@@ -1026,18 +1022,22 @@ document.getElementById("importFile")?.addEventListener("change", async (e)=>{
   }
 });
 
-/* ---------- render all ---------- */
+/* =========================
+   まとめ描画
+========================= */
 function renderAll(){
   renderHome();
   renderCampaigns();
-  if((location.hash||"").startsWith("#tasks")) renderTaskCampaignList();
-  if((location.hash||"").startsWith("#campaign=")) renderCampaignConfirm();
-  if((location.hash||"").startsWith("#live=")) renderLive();
+
+  const h = location.hash || "";
+  if(h.startsWith("#tasks")) renderTaskCampaignList();
+  if(h.startsWith("#campaign=")) renderCampaign();
+  if(h.startsWith("#live=")) renderLive();
 }
 
-/* ---------- init create UI ---------- */
-if(createTypeSelect){ setCreateTypeUI(createTypeSelect.value); }
-
-/* ---------- init ---------- */
+/* init */
+if(createTypeSelect){
+  setCreateTypeUI(createTypeSelect.value);
+}
 route();
 renderAll();
