@@ -36,7 +36,7 @@
       <div class="hero-title">やりたいことを選ぶ</div>
 
       <div class="choice-grid">
-        <a class="choice-card" href="#tasks?list=open">
+        <a class="choice-card" href="#tasks">
           <div class="choice-icon">✅</div>
           <div class="choice-main">タスク管理</div>
         </a>
@@ -91,9 +91,9 @@
     </section>
 
     <section class="row gap wrapBtns">
+      <button class="btn ghost small" id="filterAllCampaigns">すべて</button>
       <button class="btn ghost small" id="filterOpenCampaigns">未完了</button>
       <button class="btn ghost small" id="filterDoneCampaigns">完了</button>
-      <button class="btn ghost small" id="filterAllCampaigns">すべて</button>
     </section>
 
     <section class="card">
@@ -139,18 +139,49 @@
 
           <label class="field">
             <span>方式</span>
-            <select class="input" name="type">
+            <select class="input" name="type" id="createTypeSelect">
               <option value="achievement">達成型</option>
               <option value="shopping">お買い物方式</option>
+              <option value="gacha">ガチャ</option>
             </select>
           </label>
 
-          <div class="ruleHead">
-            <div class="card-title">返礼品</div>
-            <button id="addRuleRowBtn" type="button" class="btn ghost">＋行を追加</button>
-          </div>
+          <!-- 達成型 / お買い物方式 -->
+          <section id="createRulesSection" class="stack">
+            <div class="ruleHead">
+              <div class="card-title">返礼品</div>
+              <button id="addRuleRowBtn" type="button" class="btn ghost">＋行を追加</button>
+            </div>
+            <div id="rulesBox" class="rulesBox"></div>
+          </section>
 
-          <div id="rulesBox" class="rulesBox"></div>
+          <!-- ガチャ -->
+          <section id="createGachaSection" class="stack hidden">
+            <div class="grid2">
+              <label class="field">
+                <span>1回の必要pt</span>
+                <input class="input" type="number" min="1" step="1" name="g_singleCost" placeholder="例：300" />
+              </label>
+              <label class="field">
+                <span>何ptで何連（pt）</span>
+                <input class="input" type="number" min="1" step="1" name="g_multiCost" placeholder="例：3000" />
+              </label>
+            </div>
+
+            <div class="grid2">
+              <label class="field">
+                <span>何ptで何連（連数）</span>
+                <input class="input" type="number" min="1" step="1" name="g_multiCount" placeholder="例：10" />
+              </label>
+              <div></div>
+            </div>
+
+            <div class="ruleHead">
+              <div class="card-title">景品（出現率%）</div>
+              <button id="addGachaRowBtn" type="button" class="btn ghost">＋行を追加</button>
+            </div>
+            <div id="gachaItemsBox" class="rulesBox"></div>
+          </section>
 
           <button class="btn primary" type="submit">企画を作成</button>
         </form>
@@ -195,17 +226,49 @@
 
         <label class="field">
           <span>方式</span>
-          <select class="input" name="type">
+          <select class="input" name="type" id="editTypeSelect">
             <option value="achievement">達成型</option>
             <option value="shopping">お買い物方式</option>
+            <option value="gacha">ガチャ</option>
           </select>
         </label>
 
-        <div class="ruleHead">
-          <div class="card-title">返礼品</div>
-          <button id="editAddRuleRowBtn" type="button" class="btn ghost">＋行を追加</button>
-        </div>
-        <div id="editRulesBox" class="rulesBox"></div>
+        <!-- 達成型 / お買い物方式 -->
+        <section id="editRulesSection" class="stack">
+          <div class="ruleHead">
+            <div class="card-title">返礼品</div>
+            <button id="editAddRuleRowBtn" type="button" class="btn ghost">＋行を追加</button>
+          </div>
+          <div id="editRulesBox" class="rulesBox"></div>
+        </section>
+
+        <!-- ガチャ -->
+        <section id="editGachaSection" class="stack hidden">
+          <div class="grid2">
+            <label class="field">
+              <span>1回の必要pt</span>
+              <input class="input" type="number" min="1" step="1" name="g_singleCost" />
+            </label>
+            <label class="field">
+              <span>何ptで何連（pt）</span>
+              <input class="input" type="number" min="1" step="1" name="g_multiCost" />
+            </label>
+          </div>
+
+          <div class="grid2">
+            <label class="field">
+              <span>何ptで何連（連数）</span>
+              <input class="input" type="number" min="1" step="1" name="g_multiCount" />
+            </label>
+            <div></div>
+          </div>
+
+          <div class="ruleHead">
+            <div class="card-title">景品（出現率%）</div>
+            <button id="editAddGachaRowBtn" type="button" class="btn ghost">＋行を追加</button>
+          </div>
+          <div id="editGachaItemsBox" class="rulesBox"></div>
+        </section>
 
         <div class="row gap wrapBtns">
           <button class="btn primary" type="submit">保存</button>
@@ -284,6 +347,31 @@
       <div class="row gap wrapBtns">
         <a id="goTaskEditBtn" class="btn primary" href="#campaign=">タスク編集</a>
       </div>
+    </section>
+
+    <!-- ガチャ（ガチャ企画のときだけ表示） -->
+    <section id="liveGachaCard" class="card hidden">
+      <div class="card-head">
+        <div class="card-title">ガチャ</div>
+      </div>
+
+      <div class="grid2">
+        <label class="field">
+          <span>使用pt</span>
+          <input id="gachaPtInput" class="input" type="number" min="0" step="1" placeholder="例：3000" />
+        </label>
+        <div class="field">
+          <span>&nbsp;</span>
+          <button id="gachaRollBtn" class="btn primary" type="button">回す</button>
+        </div>
+      </div>
+
+      <div class="row gap wrapBtns">
+        <div class="pill" id="gachaCalcPill">—</div>
+        <button id="gachaCopyBtn" class="btn ghost" type="button">コピー</button>
+      </div>
+
+      <textarea id="gachaResultBox" class="textarea" rows="8" readonly></textarea>
     </section>
 
     <section class="card">
