@@ -3,7 +3,7 @@
 const jsStatus = document.getElementById("jsStatus");
 if (jsStatus) jsStatus.textContent = "JS: OK";
 
-const STORAGE_KEY = "reward_task_manager_v11";
+const STORAGE_KEY = "reward_task_manager_v12";
 
 function uid(){ return Math.random().toString(16).slice(2) + Date.now().toString(16); }
 function escapeHtml(s){
@@ -22,10 +22,11 @@ function loadState(){
       logs: Array.isArray(s.logs) ? s.logs : [],
       tasks: Array.isArray(s.tasks) ? s.tasks : [],
       delivery: (s.delivery && typeof s.delivery === "object") ? s.delivery : {},
-      purchases: (s.purchases && typeof s.purchases === "object") ? s.purchases : {}
+      purchases: (s.purchases && typeof s.purchases === "object") ? s.purchases : {},
+      gacha_history: (s.gacha_history && typeof s.gacha_history === "object") ? s.gacha_history : {}
     };
   }catch{
-    return { campaigns: [], logs: [], tasks: [], delivery: {}, purchases: {} };
+    return { campaigns: [], logs: [], tasks: [], delivery: {}, purchases: {}, gacha_history: {} };
   }
 }
 let state = loadState();
@@ -51,6 +52,7 @@ function migrate(){
   });
   if(!state.delivery || typeof state.delivery !== "object") state.delivery = {};
   if(!state.purchases || typeof state.purchases !== "object") state.purchases = {};
+  if(!state.gacha_history || typeof state.gacha_history !== "object") state.gacha_history = {};
 }
 migrate(); saveState();
 
@@ -145,6 +147,39 @@ function undoPurchase(campaign, listenerName){
   if(arr.length>0){ arr.pop(); saveState(); return true; }
   return false;
 }
+
+/* gacha history */
+function getGachaCampaignMap(campaignId){
+  if(!state.gacha_history[campaignId] || typeof state.gacha_history[campaignId] !== "object"){
+    state.gacha_history[campaignId] = {};
+  }
+  return state.gacha_history[campaignId];
+}
+function getGachaList(campaignId, listenerName){
+  const m = getGachaCampaignMap(campaignId);
+  if(!Array.isArray(m[listenerName])) m[listenerName] = [];
+  return m[listenerName];
+}
+function addGachaResult(campaignId, listenerName, ptUsed, results){
+  const list = getGachaList(campaignId, listenerName);
+  list.push({ at: new Date().toISOString(), ptUsed, results: results.slice() });
+  saveState();
+}
+function gachaSummaryChips(campaignId, listenerName){
+  const list = getGachaList(campaignId, listenerName);
+  if(!list.length) return [];
+  const count = new Map();
+  for(const r of list){
+    for(const item of (r.results||[])){
+      count.set(item, (count.get(item)||0)+1);
+    }
+  }
+  // count desc
+  return Array.from(count.entries())
+    .sort((a,b)=> b[1]-a[1] || a[0].localeCompare(b[0]))
+    .map(([name, n])=>`${name} x${n}`);
+}
+
 function isCampaignDone(campaign){
   const totals = computeTotalsForCampaign(campaign.id);
   if(totals.length === 0) return false;
@@ -161,7 +196,7 @@ function campaignSortDesc(a,b){
 
 /* routing */
 let currentCampaignId = null;
-let taskPageFilter = "all";  // ★ デフォルト：すべて
+let taskPageFilter = "all";
 let editMode = false;
 
 function route(){
@@ -195,7 +230,7 @@ function route(){
   if(path === "tasks"){
     showView("tasks");
     const list = (params.get("list") || "").toLowerCase();
-    taskPageFilter = (list==="open"||list==="done"||list==="all") ? list : "all"; // ★ 未指定は all
+    taskPageFilter = (list==="open"||list==="done"||list==="all") ? list : "all";
     renderTaskCampaignList();
     return;
   }
@@ -275,7 +310,7 @@ function addGachaRow(container, name="", rate=""){
     </label>
     <div class="field">
       <span>&nbsp;</span>
-      <button class="btn ghost" type="button" data-del>削除</button>
+      <button class="btn ghost" type="button" data-del>削除</ حذف</button>
     </div>
   `;
   el.querySelector("[data-del]").addEventListener("click", ()=>el.remove());
@@ -356,12 +391,10 @@ createCampaignForm?.addEventListener("submit",(e)=>{
   saveState();
   createCampaignForm.reset();
 
-  // 初期UI戻す
   if(createTypeSelect){
     createTypeSelect.value = "achievement";
     setCreateTypeUI("achievement");
   }
-
   renderAll();
   toast("作成");
 });
@@ -377,6 +410,7 @@ function deleteCampaign(campaignId){
   state.tasks = state.tasks.filter(x=>x.campaign_id!==campaignId);
   delete state.delivery[campaignId];
   delete state.purchases[campaignId];
+  delete state.gacha_history[campaignId];
 }
 
 function renderCampaigns(){
@@ -534,7 +568,6 @@ function setEditMode(on){
   if(toggleEditModeBtn) toggleEditModeBtn.textContent = editMode ? "編集を閉じる" : "編集";
   renderAll();
 }
-
 toggleEditModeBtn?.addEventListener("click", ()=> setEditMode(!editMode));
 closeEditCampaignBtn?.addEventListener("click", ()=> setEditMode(false));
 
@@ -591,7 +624,6 @@ function renderCampaignEditForm(c){
 
   setEditTypeUI(normalizeCampaignType(c.type));
 
-  // rules
   if(editRulesBox){
     editRulesBox.innerHTML = "";
     const rules = rulesSorted(c.rules);
@@ -599,7 +631,6 @@ function renderCampaignEditForm(c){
     else for(const r of rules) addRuleRow(editRulesBox, String(r.threshold), r.reward);
   }
 
-  // gacha
   if(normalizeCampaignType(c.type)==="gacha"){
     ensureGacha(c);
     editCampaignForm.elements["g_singleCost"].value = String(c.gacha.singleCost||"");
@@ -615,6 +646,7 @@ function renderCampaignEditForm(c){
   }
 }
 
+/* listener rename/delete shared */
 function renameListener(campaignId, oldName, newName){
   const oldN = (oldName||"").trim();
   const newN = (newName||"").trim();
@@ -636,22 +668,30 @@ function renameListener(campaignId, oldName, newName){
   const pm = getPurchaseMap(campaignId);
   if (pm[oldN]) { pm[newN] = pm[oldN]; delete pm[oldN]; }
 
+  const gm = getGachaCampaignMap(campaignId);
+  if (gm[oldN]) { gm[newN] = gm[oldN]; delete gm[oldN]; }
+
   return true;
 }
-function deleteListener(campaignId, name){
+function deleteListenerAll(campaignId, name){
   const n = (name||"").trim();
   state.logs = state.logs.filter(l=>!(l.campaign_id===campaignId && (l.listener_name||"").trim()===n));
   state.tasks = state.tasks.filter(t=>!(t.campaign_id===campaignId && (t.listener_name||"").trim()===n));
   const dm = getDeliveryMap(campaignId); delete dm[n];
   const pm = getPurchaseMap(campaignId); delete pm[n];
+  const gm = getGachaCampaignMap(campaignId); delete gm[n];
 }
 
-/* reward cell */
+/* ===== reward cell ===== */
 function renderRewardCell(campaign, listenerName, points){
   const type = normalizeCampaignType(campaign.type);
 
   if(type === "gacha"){
-    return `<div class="muted">—</div>`;
+    const chips = gachaSummaryChips(campaign.id, listenerName);
+    if(!chips.length) return `<div class="muted">—</div>`;
+    return `<div class="shopItems">${
+      chips.map(x=>`<span class="shopItemChip">${escapeHtml(x)}</span>`).join("")
+    }</div>`;
   }
 
   if(type === "achievement"){
@@ -693,7 +733,12 @@ function renderRewardCell(campaign, listenerName, points){
   `;
 }
 
-function renderRewardTable(tbodyEl, campaign){
+/**
+ * adminButtons:
+ *  - liveページ：常に true（編集/削除を出す）
+ *  - confirmページ：editMode の時だけ true
+ */
+function renderRewardTable(tbodyEl, campaign, adminButtons){
   if(!tbodyEl) return;
   const totals = computeTotalsForCampaign(campaign.id);
 
@@ -715,10 +760,10 @@ function renderRewardTable(tbodyEl, campaign){
             <option value="done" ${status==="done"?"selected":""}>完了</option>
           </select>
 
-          ${editMode ? `
+          ${adminButtons ? `
             <div class="row gap wrapBtns" style="margin-top:8px;">
-              <button class="btn ghost micro" type="button" data-l-edit="${escapeHtml(r.listener_name)}">編集</button>
-              <button class="btn danger micro" type="button" data-l-del="${escapeHtml(r.listener_name)}">削除</button>
+              <button class="btn ghost micro" type="button" data-admin-edit="${escapeHtml(r.listener_name)}">編集</button>
+              <button class="btn danger micro" type="button" data-admin-del="${escapeHtml(r.listener_name)}">削除</button>
             </div>` : ""
           }
         </td>
@@ -735,6 +780,7 @@ function renderRewardTable(tbodyEl, campaign){
     });
   });
 
+  // shopping buttons
   tbodyEl.querySelectorAll("[data-buy]").forEach(btn=>{
     btn.addEventListener("click", ()=>{
       const name = btn.getAttribute("data-buy");
@@ -754,33 +800,61 @@ function renderRewardTable(tbodyEl, campaign){
     });
   });
 
-  if(editMode){
-    tbodyEl.querySelectorAll("[data-l-edit]").forEach(btn=>{
+  // ★ realtime用 編集/削除（ポイント増減もここで）
+  if(adminButtons){
+    tbodyEl.querySelectorAll("[data-admin-edit]").forEach(btn=>{
       btn.addEventListener("click", ()=>{
-        const oldName = btn.getAttribute("data-l-edit");
-        const newName = prompt(`リスナー名を変更`, oldName);
-        if(newName===null) return;
-        if(!newName.trim()) return;
-        renameListener(campaign.id, oldName, newName.trim());
+        const oldName = btn.getAttribute("data-admin-edit");
+        const action = prompt("1:名前変更  2:pt増減（例 500 / -300）", "2");
+        if(action===null) return;
+
+        if(action.trim()==="1"){
+          const newName = prompt("新しい名前", oldName);
+          if(newName===null) return;
+          if(!newName.trim()) return;
+          renameListener(campaign.id, oldName, newName.trim());
+          saveState();
+          toast("変更");
+          renderAll();
+          return;
+        }
+
+        // pt増減：ログ追加で対応（ガチャでも通常でもOK）
+        const deltaStr = prompt("増減pt（例 500 / -300）", "500");
+        if(deltaStr===null) return;
+        const delta = Number(deltaStr);
+        if(!Number.isFinite(delta) || delta===0) return;
+
+        state.logs.push({
+          id: uid(),
+          campaign_id: campaign.id,
+          listener_name: oldName,
+          delta_points: delta,
+          created_at: new Date().toISOString(),
+        });
         saveState();
+        toast("反映");
         renderAll();
-        toast("変更");
       });
     });
-    tbodyEl.querySelectorAll("[data-l-del]").forEach(btn=>{
+
+    tbodyEl.querySelectorAll("[data-admin-del]").forEach(btn=>{
       btn.addEventListener("click", ()=>{
-        const name = btn.getAttribute("data-l-del");
-        if(!confirm(`削除しますか？`)) return;
-        deleteListener(campaign.id, name);
+        const name = btn.getAttribute("data-admin-del");
+        if(!confirm("削除しますか？")) return;
+        deleteListenerAll(campaign.id, name);
         saveState();
-        renderAll();
         toast("削除");
+        renderAll();
       });
     });
   }
 }
 
-/* tasks CRUD */
+/* ===== tasks list (confirm page) ===== */
+const createTaskFormEl = document.getElementById("createTaskForm");
+const taskListEl = document.getElementById("taskList");
+
 createTaskFormEl?.addEventListener("submit",(e)=>{
   e.preventDefault();
   const c = getCurrentCampaign();
@@ -879,6 +953,7 @@ function renderTaskListForCampaign(c){
   });
 }
 
+/* ===== confirm page render ===== */
 function renderCampaignConfirm(){
   const c = getCurrentCampaign();
   if(!c){ location.hash="#tasks"; return; }
@@ -897,7 +972,7 @@ function renderCampaignConfirm(){
   }
 
   renderCampaignEditForm(c);
-  renderRewardTable(leaderboardBody, c);
+  renderRewardTable(leaderboardBody, c, !!editMode);
   renderTaskListForCampaign(c);
 }
 
@@ -909,6 +984,7 @@ const goTaskEditBtn = document.getElementById("goTaskEditBtn");
 const liveLeaderboardBody = document.getElementById("liveLeaderboardBody");
 const rewardListBox = document.getElementById("rewardListBox");
 
+const liveInputCard = document.getElementById("liveInputCard");
 const listenerNameInput = document.getElementById("listenerName");
 const customPointsInput = document.getElementById("customPoints");
 const liveMsg = document.getElementById("liveMsg");
@@ -998,6 +1074,7 @@ function renderRewardList(c){
 
 /* ===== GACHA LIVE ===== */
 const liveGachaCard = document.getElementById("liveGachaCard");
+const gachaUserInput = document.getElementById("gachaUserInput");
 const gachaPtInput = document.getElementById("gachaPtInput");
 const gachaRollBtn = document.getElementById("gachaRollBtn");
 const gachaResultBox = document.getElementById("gachaResultBox");
@@ -1011,7 +1088,6 @@ function calcGachaPulls(pt, g){
 
   if(pt <= 0 || singleCost <= 0) return { multiTimes:0, singleTimes:0, total:0, remain:pt };
 
-  // まず多連が成立するなら多連を優先（一般的な挙動）
   let multiTimes = 0;
   let remain = pt;
 
@@ -1028,7 +1104,6 @@ function calcGachaPulls(pt, g){
 }
 
 function pickGachaItem(items){
-  // items: [{name, rate}]
   const cleaned = items
     .filter(x => x && x.name && Number.isFinite(Number(x.rate)) && Number(x.rate) > 0)
     .map(x => ({ name: x.name, rate: Number(x.rate) }));
@@ -1045,7 +1120,7 @@ function pickGachaItem(items){
   return cleaned[cleaned.length-1].name;
 }
 
-function rollGacha(pt){
+function rollGacha(user, pt){
   const c = getCurrentCampaign();
   if(!c) return;
   ensureGacha(c);
@@ -1070,17 +1145,35 @@ function rollGacha(pt){
     results.push(picked ?? "（景品未設定）");
   }
 
-  const header = `使用pt：${pt}\n回数：${calc.total}\n\n`;
+  // ★ ptは「受け取ったpt」として合計ptに加算
+  state.logs.push({
+    id: uid(),
+    campaign_id: c.id,
+    listener_name: user,
+    delta_points: pt,
+    created_at: new Date().toISOString(),
+  });
+
+  // ★ ガチャ結果を保存（返礼品状況に反映）
+  addGachaResult(c.id, user, pt, results);
+
+  const header = `回した人：${user}\n使用pt：${pt}\n回数：${calc.total}\n\n`;
   const body = results.map((x,i)=>`${String(i+1).padStart(2,"0")}：${x}`).join("\n");
   const text = header + body;
 
   if(gachaResultBox) gachaResultBox.value = text;
+
+  saveState();
   toast("結果");
+  renderAll();
 }
 
 gachaRollBtn?.addEventListener("click", ()=>{
+  const user = (gachaUserInput?.value||"").trim();
   const pt = Number(gachaPtInput?.value || 0);
-  rollGacha(pt);
+  if(!user) return toast("名前");
+  if(!Number.isFinite(pt) || pt<=0) return toast("pt");
+  rollGacha(user, pt);
 });
 
 gachaCopyBtn?.addEventListener("click", async ()=>{
@@ -1090,7 +1183,6 @@ gachaCopyBtn?.addEventListener("click", async ()=>{
     await navigator.clipboard.writeText(text);
     toast("コピー");
   }catch{
-    // fallback
     try{
       gachaResultBox.focus();
       gachaResultBox.select();
@@ -1107,10 +1199,12 @@ function renderGachaCard(c){
   const isGacha = type === "gacha";
   liveGachaCard?.classList.toggle("hidden", !isGacha);
 
+  // ★ ガチャならライブ入力カードを消す
+  liveInputCard?.classList.toggle("hidden", isGacha);
+
   if(!isGacha) return;
-  ensureGacha(c);
   if(gachaCalcPill) gachaCalcPill.textContent = "—";
-  if(gachaResultBox) gachaResultBox.value = "";
+  // 直前の結果は残してOK（消したいならここで gachaResultBox.value=""）
 }
 
 /* live render */
@@ -1128,9 +1222,14 @@ function renderLive(){
 
   renderGachaCard(c);
   renderRewardList(c);
-  renderRewardTable(liveLeaderboardBody, c);
+
+  // ★ realtimeは常に 編集/削除 を出す
+  renderRewardTable(liveLeaderboardBody, c, true);
   setLiveMsg("");
 }
+
+/* ===== Campaign list render on tasks/campaigns ===== */
+function getCurrentCampaignSafe(){ return getCurrentCampaign(); }
 
 /* backup/restore */
 document.getElementById("exportBtn")?.addEventListener("click", ()=>{
@@ -1154,6 +1253,7 @@ document.getElementById("importFile")?.addEventListener("change", async (e)=>{
       tasks: Array.isArray(obj.tasks) ? obj.tasks : [],
       delivery: (obj.delivery && typeof obj.delivery === "object") ? obj.delivery : {},
       purchases: (obj.purchases && typeof obj.purchases === "object") ? obj.purchases : {},
+      gacha_history: (obj.gacha_history && typeof obj.gacha_history === "object") ? obj.gacha_history : {}
     };
     migrate();
     saveState();
@@ -1167,7 +1267,7 @@ document.getElementById("importFile")?.addEventListener("change", async (e)=>{
   }
 });
 
-/* render all */
+/* ===== render all ===== */
 function renderAll(){
   renderHome();
   renderCampaigns();
@@ -1176,36 +1276,9 @@ function renderAll(){
   if((location.hash||"").startsWith("#live=")) renderLive();
 }
 
+/* init create UI */
+if(createTypeSelect){ setCreateTypeUI(createTypeSelect.value); }
+
 /* init */
-function getCurrentCampaignSafe(){
-  return getCurrentCampaign();
-}
-function renderCampaignConfirm(){
-  const c = getCurrentCampaignSafe();
-  if(!c){ location.hash="#tasks"; return; }
-
-  const done = isCampaignDone(c);
-  const statusLabel = done ? "完了" : "未完了";
-
-  if(campaignTitleEl) campaignTitleEl.textContent = c.name;
-  if(campaignMetaEl) campaignMetaEl.textContent = `${c.start_date}`;
-  if(campaignStatusPill) campaignStatusPill.textContent = statusLabel;
-  if(goLiveBtn) goLiveBtn.href = `#live=${c.id}`;
-
-  if(!editMode){
-    campaignEditPanel?.classList.add("hidden");
-    createTaskFormEl?.classList.add("hidden");
-  }
-
-  renderCampaignEditForm(c);
-  renderRewardTable(leaderboardBody, c);
-  renderTaskListForCampaign(c);
-}
-
-/* create type UI init */
-if(createTypeSelect){
-  setCreateTypeUI(createTypeSelect.value);
-}
-
 route();
 renderAll();
