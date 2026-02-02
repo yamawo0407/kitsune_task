@@ -297,36 +297,6 @@
     </section>
 
     <section class="stack">
-      <form id="createTaskForm" class="grid3 hidden">
-       <label class="field">
-  <span>リスナー</span>
-  <select id="listenerSelect" class="input"></select>
-</label>
-
-<label class="field">
-  <span>新しい名前（入力したら候補に追加）</span>
-  <input id="listenerNewName" class="input" placeholder="表示名" />
-</label>
-        <label class="field">
-          <span>内容</span>
-          <input name="title" class="input" required />
-        </label>
-        <label class="field">
-          <span>状態</span>
-          <select name="status" class="input">
-            <option value="todo">未着手</option>
-            <option value="waiting">必要情報待ち</option>
-            <option value="doing">制作/準備中</option>
-            <option value="ship">納品/発送待ち</option>
-            <option value="done">完了</option>
-          </select>
-        </label>
-        <div class="field">
-          <span>&nbsp;</span>
-          <button class="btn primary" type="submit">追加</button>
-        </div>
-      </form>
-
       <div id="taskList" class="taskList"></div>
     </section>
   </main>
@@ -358,7 +328,7 @@
       <div class="grid2">
         <label class="field">
           <span>回した人</span>
-          <input id="gachaUserInput" class="input" list="listenerList" placeholder="表示名" />
+          <select id="gachaUserSelect" class="input"></select>
         </label>
         <label class="field">
           <span>使用pt</span>
@@ -408,9 +378,13 @@
 
         <div class="stack">
           <label class="field">
-            <span>リスナー名</span>
-            <input id="listenerName" class="input" list="listenerList" />
-            <datalist id="listenerList"></datalist>
+            <span>リスナー</span>
+            <select id="listenerSelect" class="input"></select>
+          </label>
+
+          <label class="field">
+            <span>新しい名前</span>
+            <input id="listenerNewName" class="input" placeholder="表示名（入力→自動追加）" />
           </label>
 
           <div class="row wrapBtns">
