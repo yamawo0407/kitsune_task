@@ -71,7 +71,6 @@
         </div>
       </section>
 
-      <!-- ホームの注意だけ残す -->
       <section class="card">
         <div class="card-head">
           <div class="card-title">注意</div>
@@ -146,7 +145,6 @@
             </select>
           </label>
 
-          <!-- 達成型 / お買い物方式 -->
           <section id="createRulesSection" class="stack">
             <div class="ruleHead">
               <div class="card-title">返礼品</div>
@@ -155,7 +153,6 @@
             <div id="rulesBox" class="rulesBox"></div>
           </section>
 
-          <!-- ガチャ -->
           <section id="createGachaSection" class="stack hidden">
             <div class="grid2">
               <label class="field">
@@ -233,7 +230,6 @@
           </select>
         </label>
 
-        <!-- 達成型 / お買い物方式 -->
         <section id="editRulesSection" class="stack">
           <div class="ruleHead">
             <div class="card-title">返礼品</div>
@@ -242,7 +238,6 @@
           <div id="editRulesBox" class="rulesBox"></div>
         </section>
 
-        <!-- ガチャ -->
         <section id="editGachaSection" class="stack hidden">
           <div class="grid2">
             <label class="field">
@@ -357,16 +352,17 @@
 
       <div class="grid2">
         <label class="field">
+          <span>回した人</span>
+          <input id="gachaUserInput" class="input" placeholder="表示名" />
+        </label>
+        <label class="field">
           <span>使用pt</span>
           <input id="gachaPtInput" class="input" type="number" min="0" step="1" placeholder="例：3000" />
         </label>
-        <div class="field">
-          <span>&nbsp;</span>
-          <button id="gachaRollBtn" class="btn primary" type="button">回す</button>
-        </div>
       </div>
 
       <div class="row gap wrapBtns">
+        <button id="gachaRollBtn" class="btn primary" type="button">回す</button>
         <div class="pill" id="gachaCalcPill">—</div>
         <button id="gachaCopyBtn" class="btn ghost" type="button">コピー</button>
       </div>
@@ -400,7 +396,8 @@
         </table>
       </section>
 
-      <section class="card">
+      <!-- ★ ガチャのときはこのカードを非表示にする -->
+      <section id="liveInputCard" class="card">
         <div class="card-head">
           <div class="card-title">ライブ入力</div>
         </div>
