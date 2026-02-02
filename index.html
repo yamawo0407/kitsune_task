@@ -344,7 +344,7 @@
       </div>
     </section>
 
-    <!-- ガチャ企画のときだけ表示（JSで制御） -->
+    <!-- ガチャ企画のときだけ表示 -->
     <section id="liveGachaCard" class="card hidden">
       <div class="card-head">
         <div class="card-title">ガチャ</div>
@@ -353,7 +353,7 @@
       <div class="grid2">
         <label class="field">
           <span>回した人</span>
-          <input id="gachaUserInput" class="input" placeholder="表示名" />
+          <input id="gachaUserInput" class="input" list="listenerList" placeholder="表示名" />
         </label>
         <label class="field">
           <span>使用pt</span>
@@ -404,7 +404,8 @@
         <div class="stack">
           <label class="field">
             <span>リスナー名</span>
-            <input id="listenerName" class="input" />
+            <input id="listenerName" class="input" list="listenerList" />
+            <datalist id="listenerList"></datalist>
           </label>
 
           <div class="row wrapBtns">
