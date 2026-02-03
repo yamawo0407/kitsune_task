@@ -346,3 +346,706 @@ function addGachaRow(container, name="", rate=""){
       <input class="input" type="number" min="0" step="0.01" data-g-rate value="${escapeHtml(rate)}" />
     </label>
     <div class="field">
+      <span>&nbsp;</span>
+      <button class="btn ghost" type="button" data-del>削除</button>
+    </div>
+  `;
+  el.querySelector("[data-del]").addEventListener("click", ()=>el.remove());
+  container.appendChild(el);
+}
+function collectGachaItemsFrom(container){
+  const items = [];
+  container.querySelectorAll(".ruleRow").forEach(row=>{
+    const name = (row.querySelector("[data-g-name]")?.value||"").toString().trim();
+    const rate = parseFloat(row.querySelector("[data-g-rate]")?.value);
+    if(name && Number.isFinite(rate) && rate > 0) items.push({ name, rate });
+  });
+  return items;
+}
+
+/* create DOM */
+const campaignListEl = document.getElementById("campaignList");
+const campaignSearchEl = document.getElementById("campaignSearch");
+const createCampaignForm = document.getElementById("createCampaignForm");
+const createTypeSelect = document.getElementById("createTypeSelect");
+const createRulesSection = document.getElementById("createRulesSection");
+const createGachaSection = document.getElementById("createGachaSection");
+const rulesBox = document.getElementById("rulesBox");
+const addRuleRowBtn = document.getElementById("addRuleRowBtn");
+const addGachaRowBtn = document.getElementById("addGachaRowBtn");
+const gachaItemsBox = document.getElementById("gachaItemsBox");
+
+function setCreateTypeUI(type){
+  const isGacha = type === "gacha";
+  createRulesSection?.classList.toggle("hidden", isGacha);
+  createGachaSection?.classList.toggle("hidden", !isGacha);
+}
+createTypeSelect?.addEventListener("change", ()=> setCreateTypeUI(createTypeSelect.value));
+
+addRuleRowBtn?.addEventListener("click", ()=> rulesBox && addRuleRow(rulesBox, "", ""));
+if(rulesBox && rulesBox.children.length===0){
+  addRuleRow(rulesBox, "1000", "デジグッズA");
+  addRuleRow(rulesBox, "3000", "デジグッズB");
+}
+addGachaRowBtn?.addEventListener("click", ()=> gachaItemsBox && addGachaRow(gachaItemsBox, "", ""));
+if(gachaItemsBox && gachaItemsBox.children.length===0){
+  addGachaRow(gachaItemsBox, "SSR", "1");
+  addGachaRow(gachaItemsBox, "SR", "9");
+  addGachaRow(gachaItemsBox, "R", "90");
+}
+
+createCampaignForm?.addEventListener("submit",(e)=>{
+  e.preventDefault();
+  const fd = new FormData(createCampaignForm);
+
+  const name = (fd.get("name")||"").toString().trim();
+  const start_date = (fd.get("start_date")||"").toString().trim();
+  const type = normalizeCampaignType((fd.get("type")||"achievement").toString());
+  if(!name || !start_date) return;
+
+  const campaign = {
+    id: uid(),
+    name,
+    start_date,
+    type,
+    rules: [],
+    created_at: new Date().toISOString(),
+  };
+
+  if(type === "gacha"){
+    const singleCost = Number(fd.get("g_singleCost")||0);
+    const multiCost  = Number(fd.get("g_multiCost")||0);
+    const multiCount = Number(fd.get("g_multiCount")||0);
+    const items = gachaItemsBox ? collectGachaItemsFrom(gachaItemsBox) : [];
+    campaign.gacha = { singleCost, multiCost, multiCount, items };
+    ensureGacha(campaign);
+  }else{
+    campaign.rules = rulesBox ? collectRulesFrom(rulesBox) : [];
+  }
+
+  state.campaigns.unshift(campaign);
+  saveState();
+
+  createCampaignForm.reset();
+  if(createTypeSelect){
+    createTypeSelect.value = "achievement";
+    setCreateTypeUI("achievement");
+  }
+  renderAll();
+  toast("作成");
+});
+campaignSearchEl?.addEventListener("input", renderCampaigns);
+
+function deleteCampaign(campaignId){
+  state.campaigns = state.campaigns.filter(x=>x.id!==campaignId);
+  state.logs = state.logs.filter(x=>x.campaign_id!==campaignId);
+  delete state.delivery[campaignId];
+  delete state.gacha_history[campaignId];
+  delete state.listener_pool[campaignId];
+  delete state.active_listener[campaignId];
+  saveState();
+}
+
+function renderCampaigns(){
+  if(!campaignListEl) return;
+  const q = (campaignSearchEl?.value||"").trim().toLowerCase();
+
+  const list = state.campaigns
+    .filter(c => (c.name||"").toLowerCase().includes(q))
+    .slice()
+    .sort(campaignSortDesc);
+
+  if(!list.length){
+    campaignListEl.innerHTML = `<div class="muted">企画がありません。</div>`;
+    return;
+  }
+
+  campaignListEl.innerHTML = list.map(c=>{
+    const done = isCampaignDone(c);
+    const statusLabel = done ? "完了" : "未完了";
+    const statusBadge = done ? "✅" : "🔴";
+    return `
+      <div class="item">
+        <div>
+          <div><strong>${escapeHtml(c.name)}</strong></div>
+          <div class="muted">${escapeHtml(c.start_date)} / ${statusLabel}</div>
+        </div>
+        <div class="itemActions">
+          <button class="btn ghost small" type="button" data-open="${c.id}">確認</button>
+          <button class="btn ghost small" type="button" data-live="${c.id}">リアルタイム</button>
+          <button class="btn danger micro" type="button" data-del="${c.id}">削除</button>
+          <div style="font-size:18px;">${statusBadge}</div>
+        </div>
+      </div>
+    `;
+  }).join("");
+
+  campaignListEl.querySelectorAll("[data-open]").forEach(btn=>{
+    btn.addEventListener("click",()=> location.hash = `#campaign=${btn.getAttribute("data-open")}`);
+  });
+  campaignListEl.querySelectorAll("[data-live]").forEach(btn=>{
+    btn.addEventListener("click",()=> location.hash = `#live=${btn.getAttribute("data-live")}`);
+  });
+  campaignListEl.querySelectorAll("[data-del]").forEach(btn=>{
+    btn.addEventListener("click",()=>{
+      const id = btn.getAttribute("data-del");
+      const c = state.campaigns.find(x=>x.id===id);
+      if(!c) return;
+      if(!confirm(`「${c.name}」を削除します。OK？`)) return;
+      deleteCampaign(id);
+      renderAll();
+      toast("削除");
+    });
+  });
+}
+
+/* =========================
+   Tasks
+========================= */
+const taskCampaignListEl = document.getElementById("taskCampaignList");
+document.getElementById("filterAllCampaigns")?.addEventListener("click", ()=>{ taskPageFilter="all"; renderTaskCampaignList(); });
+document.getElementById("filterOpenCampaigns")?.addEventListener("click", ()=>{ taskPageFilter="open"; renderTaskCampaignList(); });
+document.getElementById("filterDoneCampaigns")?.addEventListener("click", ()=>{ taskPageFilter="done"; renderTaskCampaignList(); });
+
+function filterCampaignsByListMode(list, campaigns){
+  if(list==="open") return campaigns.filter(c=>!isCampaignDone(c));
+  if(list==="done") return campaigns.filter(c=>isCampaignDone(c));
+  return campaigns;
+}
+function renderTaskCampaignList(){
+  if(!taskCampaignListEl) return;
+
+  let list = state.campaigns.slice().sort(campaignSortDesc);
+  list = filterCampaignsByListMode(taskPageFilter, list);
+
+  if(!list.length){
+    taskCampaignListEl.innerHTML = `<div class="muted">該当する企画がありません。</div>`;
+    return;
+  }
+
+  taskCampaignListEl.innerHTML = list.map(c=>{
+    const done = isCampaignDone(c);
+    const statusBadge = done ? "✅" : "🔴";
+    const statusLabel = done ? "完了" : "未完了";
+    return `
+      <div class="item itemClickable" data-open="${c.id}">
+        <div>
+          <div><strong>${escapeHtml(c.name)}</strong></div>
+          <div class="muted">${escapeHtml(c.start_date)} / ${statusLabel}</div>
+        </div>
+        <div class="itemActions">
+          <div style="font-size:18px;">${statusBadge}</div>
+        </div>
+      </div>
+    `;
+  }).join("");
+
+  taskCampaignListEl.querySelectorAll(".itemClickable").forEach(el=>{
+    el.addEventListener("click",()=> location.hash = `#campaign=${el.getAttribute("data-open")}`);
+  });
+}
+
+/* =========================
+   Reward cell
+========================= */
+function renderRewardCell(campaign, listenerName, points){
+  const type = normalizeCampaignType(campaign.type);
+
+  if(type === "gacha"){
+    const chips = gachaSummaryChips(campaign.id, listenerName);
+    if(!chips.length) return `<div class="muted">—</div>`;
+    return `<div class="shopItems">${chips.map(x=>`<span class="shopItemChip">${escapeHtml(x)}</span>`).join("")}</div>`;
+  }
+
+  const rules = rulesSorted(campaign.rules);
+  if(type === "achievement"){
+    const list = achievedRewards(campaign, points);
+    if(list.length === 0) return `<div class="muted">—</div>`;
+    return `<div class="shopItems">${list.map(x=>`<span class="shopItemChip">${escapeHtml(`${x.cost}pt達成：${x.reward}`)}</span>`).join("")}</div>`;
+  }
+
+  // shopping（表示のみ）
+  if(!rules.length) return `<div class="muted">—</div>`;
+  const can = rules.filter(r=>points>=r.threshold).map(r=>`${r.threshold}：${r.reward}`);
+  if(!can.length) return `<div class="muted">—</div>`;
+  return `<div class="shopItems">${can.map(x=>`<span class="shopItemChip">${escapeHtml(x)}</span>`).join("")}</div>`;
+}
+
+/* =========================
+   Campaign (confirm)
+========================= */
+const campaignTitleEl = document.getElementById("campaignTitle");
+const campaignMetaEl = document.getElementById("campaignMeta");
+const campaignStatusPill = document.getElementById("campaignStatusPill");
+const goLiveBtn = document.getElementById("goLiveBtn");
+const leaderboardBody = document.getElementById("leaderboardBody");
+
+function renderRewardTableConfirm(tbodyEl, campaign){
+  if(!tbodyEl) return;
+  const totals = computeTotalsForCampaign(campaign.id);
+  if(!totals.length){
+    tbodyEl.innerHTML = `<tr><td colspan="4" class="muted">データなし</td></tr>`;
+    return;
+  }
+
+  tbodyEl.innerHTML = totals.map(r=>{
+    const status = getDeliveryStatus(campaign.id, r.listener_name);
+    return `
+      <tr>
+        <td>${escapeHtml(r.listener_name)}</td>
+        <td class="right">${r.points}</td>
+        <td class="center">${renderRewardCell(campaign, r.listener_name, r.points)}</td>
+        <td>
+          <select class="input" data-delivery="${escapeHtml(r.listener_name)}">
+            <option value="open" ${status==="open"?"selected":""}>未完了</option>
+            <option value="done" ${status==="done"?"selected":""}>完了</option>
+          </select>
+        </td>
+      </tr>
+    `;
+  }).join("");
+
+  tbodyEl.querySelectorAll("[data-delivery]").forEach(sel=>{
+    sel.addEventListener("change", ()=>{
+      const name = sel.getAttribute("data-delivery");
+      setDeliveryStatus(campaign.id, name, sel.value);
+      toast("更新");
+      renderAll();
+    });
+  });
+}
+
+function renderCampaign(){
+  const c = getCurrentCampaign();
+  if(!c){ location.hash="#tasks"; return; }
+
+  const done = isCampaignDone(c);
+  const statusLabel = done ? "完了" : "未完了";
+
+  if(campaignTitleEl) campaignTitleEl.textContent = c.name;
+  if(campaignMetaEl) campaignMetaEl.textContent = `${c.start_date}`;
+  if(campaignStatusPill) campaignStatusPill.textContent = statusLabel;
+  if(goLiveBtn) goLiveBtn.href = `#live=${c.id}`;
+
+  renderRewardTableConfirm(leaderboardBody, c);
+}
+
+/* =========================
+   LIVE
+========================= */
+const liveTitle = document.getElementById("liveTitle");
+const liveMeta = document.getElementById("liveMeta");
+const goConfirmBtn = document.getElementById("goConfirmBtn");
+const liveLeaderboardBody = document.getElementById("liveLeaderboardBody");
+const rewardListBox = document.getElementById("rewardListBox");
+const liveGachaCard = document.getElementById("liveGachaCard");
+const liveInputCard = document.getElementById("liveInputCard");
+
+const addNameInput = document.getElementById("addNameInput");
+const addNameBtn = document.getElementById("addNameBtn");
+const listenerSelect = document.getElementById("listenerSelect");
+
+const clearActiveBtn = document.getElementById("clearActiveBtn");
+const customPointsInput = document.getElementById("customPoints");
+const liveMsg = document.getElementById("liveMsg");
+function setLiveMsg(msg){ if(liveMsg) liveMsg.textContent = msg || ""; }
+
+/* gacha dom */
+const gachaAddNameInput = document.getElementById("gachaAddNameInput");
+const gachaAddNameBtn = document.getElementById("gachaAddNameBtn");
+const gachaListenerSelect = document.getElementById("gachaListenerSelect");
+const gachaPtInput = document.getElementById("gachaPtInput");
+const gachaRollBtn = document.getElementById("gachaRollBtn");
+const gachaResultBox = document.getElementById("gachaResultBox");
+const gachaCopyBtn = document.getElementById("gachaCopyBtn");
+
+function renderRewardList(c){
+  if(!rewardListBox) return;
+  const type = normalizeCampaignType(c.type);
+
+  if(type === "gacha"){
+    ensureGacha(c);
+    const items = c.gacha.items || [];
+    rewardListBox.innerHTML = items.length
+      ? items.map(it => `<div class="rewardChip">${escapeHtml(it.name)}（${escapeHtml(it.rate)}%）</div>`).join("")
+      : `<div class="muted">返礼品なし</div>`;
+    return;
+  }
+
+  const rules = rulesSorted(c.rules);
+  rewardListBox.innerHTML = rules.length
+    ? rules.map(r=>{
+        const label = (type==="achievement")
+          ? `${r.threshold}pt達成：${escapeHtml(r.reward)}`
+          : `${r.threshold}：${escapeHtml(r.reward)}`;
+        return `<div class="rewardChip">${label}</div>`;
+      }).join("")
+    : `<div class="muted">返礼品なし</div>`;
+}
+
+/* プルダウン描画（通常/ガチャ共通で使う） */
+function fillSelect(selectEl, options, selectedValue){
+  if(!selectEl) return;
+  const safe = options.map(x=>x.trim()).filter(Boolean);
+  const selected = (selectedValue||"").trim();
+
+  const html = [
+    `<option value="">未選択</option>`,
+    ...safe.map(name=>`<option value="${escapeHtml(name)}">${escapeHtml(name)}</option>`)
+  ].join("");
+
+  selectEl.innerHTML = html;
+  if(selected && safe.includes(selected)){
+    selectEl.value = selected;
+  }else{
+    selectEl.value = "";
+  }
+}
+
+/* 返礼品状況（左側テーブル） */
+function renderLiveTable(tbodyEl, campaign){
+  if(!tbodyEl) return;
+  const totals = computeTotalsForCampaign(campaign.id);
+  if(!totals.length){
+    tbodyEl.innerHTML = `<tr><td colspan="3" class="muted">データなし</td></tr>`;
+    return;
+  }
+  tbodyEl.innerHTML = totals.map(r=>`
+    <tr>
+      <td>${escapeHtml(r.listener_name)}</td>
+      <td class="right">${r.points}</td>
+      <td class="center">${renderRewardCell(campaign, r.listener_name, r.points)}</td>
+    </tr>
+  `).join("");
+}
+
+/* ログ追加 */
+function addLog(delta){
+  const c = getCurrentCampaign();
+  if(!c) return;
+
+  const name = (listenerSelect?.value || "").trim();
+  if(!name) return toast("リスナー未選択");
+
+  state.logs.push({
+    id: uid(),
+    campaign_id: c.id,
+    listener_name: name,
+    delta_points: delta,
+    created_at: new Date().toISOString(),
+  });
+  addListenerToPool(c.id, name);
+  setActiveListener(c.id, name);
+
+  saveState();
+  renderAll();
+  setLiveMsg(`${delta>0?"+":""}${delta} / ${name}`);
+  toast("反映");
+}
+
+function undoLastLog(){
+  const c = getCurrentCampaign();
+  if(!c) return;
+  for(let i=state.logs.length-1;i>=0;i--){
+    if(state.logs[i].campaign_id===c.id){
+      state.logs.splice(i,1);
+      saveState();
+      renderAll();
+      toast("戻す");
+      return;
+    }
+  }
+}
+
+/* 追加ボタン（通常） */
+function addNewListenerFromInput(){
+  const c = getCurrentCampaign();
+  if(!c) return;
+  const name = (addNameInput?.value || "").trim();
+  if(!name) return;
+
+  addListenerToPool(c.id, name);
+  setActiveListener(c.id, name);
+
+  addNameInput.value = "";
+  renderAll();            // プルダウン再描画
+  if(listenerSelect) listenerSelect.value = name;
+  toast("追加");
+}
+addNameBtn?.addEventListener("click", addNewListenerFromInput);
+addNameInput?.addEventListener("keydown", (e)=>{
+  if(e.key === "Enter"){ e.preventDefault(); addNewListenerFromInput(); }
+});
+
+listenerSelect?.addEventListener("change", ()=>{
+  const c = getCurrentCampaign();
+  if(!c) return;
+  const name = (listenerSelect.value||"").trim();
+  if(name) setActiveListener(c.id, name);
+});
+
+/* clear */
+clearActiveBtn?.addEventListener("click", ()=>{
+  const c = getCurrentCampaign();
+  if(!c) return;
+  setActiveListener(c.id, "");
+  if(listenerSelect) listenerSelect.value = "";
+  toast("解除");
+});
+
+/* buttons */
+document.querySelectorAll("[data-add]").forEach(btn=>{
+  btn.addEventListener("click", ()=> addLog(parseInt(btn.getAttribute("data-add"),10)));
+});
+document.getElementById("addCustomBtn")?.addEventListener("click", ()=>{
+  const v = parseInt(customPointsInput.value,10);
+  if(!v) return;
+  addLog(v);
+  customPointsInput.value = "";
+});
+document.getElementById("subtractBtn")?.addEventListener("click", ()=>{
+  const v = parseInt(customPointsInput.value,10);
+  if(!v) return;
+  addLog(-Math.abs(v));
+  customPointsInput.value = "";
+});
+document.getElementById("undoBtn")?.addEventListener("click", ()=> undoLastLog());
+
+/* =========================
+   Gacha
+========================= */
+function calcGachaPulls(pt, g){
+  const singleCost = Math.max(0, Number(g.singleCost||0));
+  const multiCost = Math.max(0, Number(g.multiCost||0));
+  const multiCount = Math.max(0, Number(g.multiCount||0));
+  if(pt <= 0 || singleCost <= 0) return { total:0 };
+
+  let remain = pt;
+  let multiTimes = 0;
+  if(multiCost > 0 && multiCount > 0){
+    multiTimes = Math.floor(remain / multiCost);
+    remain -= multiTimes * multiCost;
+  }
+  const singleTimes = Math.floor(remain / singleCost);
+  const total = multiTimes * (multiCount||0) + singleTimes;
+  return { total };
+}
+function pickGachaItem(items){
+  const cleaned = items
+    .filter(x => x && x.name && Number.isFinite(Number(x.rate)) && Number(x.rate) > 0)
+    .map(x => ({ name: x.name, rate: Number(x.rate) }));
+
+  if(cleaned.length===0) return null;
+
+  const sum = cleaned.reduce((s,x)=>s+x.rate,0);
+  const r = Math.random() * sum;
+  let acc = 0;
+  for(const it of cleaned){
+    acc += it.rate;
+    if(r <= acc) return it.name;
+  }
+  return cleaned[cleaned.length-1].name;
+}
+
+/* ガチャ：名前追加（入力→追加→select反映） */
+function addNewGachaListener(){
+  const c = getCurrentCampaign();
+  if(!c) return;
+  const name = (gachaAddNameInput?.value || "").trim();
+  if(!name) return;
+
+  addListenerToPool(c.id, name);
+  setActiveListener(c.id, name);
+
+  gachaAddNameInput.value = "";
+  renderAll();
+  if(gachaListenerSelect) gachaListenerSelect.value = name;
+  toast("追加");
+}
+gachaAddNameBtn?.addEventListener("click", addNewGachaListener);
+gachaAddNameInput?.addEventListener("keydown", (e)=>{
+  if(e.key === "Enter"){ e.preventDefault(); addNewGachaListener(); }
+});
+
+gachaListenerSelect?.addEventListener("change", ()=>{
+  const c = getCurrentCampaign();
+  if(!c) return;
+  const name = (gachaListenerSelect.value||"").trim();
+  if(name) setActiveListener(c.id, name);
+});
+
+function rollGacha(user, pt){
+  const c = getCurrentCampaign();
+  if(!c) return;
+  ensureGacha(c);
+
+  const calc = calcGachaPulls(pt, c.gacha);
+  if(calc.total <= 0){
+    if(gachaResultBox) gachaResultBox.value = "";
+    return toast("回せない");
+  }
+
+  // ここが重要：入力でも追加できるように、必ずpoolに入れる
+  addListenerToPool(c.id, user);
+  setActiveListener(c.id, user);
+
+  const results = [];
+  for(let i=0;i<calc.total;i++){
+    results.push(pickGachaItem(c.gacha.items || []) ?? "（景品未設定）");
+  }
+
+  // ポイントはログとして加算（仕様通り）
+  state.logs.push({
+    id: uid(),
+    campaign_id: c.id,
+    listener_name: user,
+    delta_points: pt,
+    created_at: new Date().toISOString(),
+  });
+  addGachaResult(c.id, user, pt, results);
+
+  // 表示：番号なし、被り×n、使用ポイントの明記なし
+  const count = new Map();
+  for(const r of results) count.set(r, (count.get(r) || 0) + 1);
+  const lines = Array.from(count.entries())
+    .sort((a,b)=> b[1]-a[1] || a[0].localeCompare(b[0]))
+    .map(([name, n]) => (n === 1 ? `${name}` : `${name} ×${n}`))
+    .join("\n");
+
+  if(gachaResultBox){
+    gachaResultBox.value = `回した人：${user}\n回数：${calc.total}\n\n${lines}`;
+  }
+
+  saveState();
+  renderAll();
+  toast("結果");
+}
+
+gachaRollBtn?.addEventListener("click", ()=>{
+  const c = getCurrentCampaign();
+  if(!c) return;
+
+  // ✅「選択だけ」にならないように：まず入力欄があればそれを優先し、無ければselect
+  // （今回は入力欄＝追加欄なので通常は追加→選択の流れだが、ここで保険をかける）
+  let user = (gachaListenerSelect?.value || "").trim();
+  const pt = Number(gachaPtInput?.value || 0);
+
+  if(!user) return toast("リスナー未選択");
+  if(!Number.isFinite(pt) || pt<=0) return toast("pt");
+
+  rollGacha(user, pt);
+});
+
+gachaCopyBtn?.addEventListener("click", async ()=>{
+  const text = (gachaResultBox?.value||"").toString();
+  if(!text.trim()) return toast("空");
+  try{
+    await navigator.clipboard.writeText(text);
+    toast("コピー");
+  }catch{
+    try{
+      gachaResultBox.focus();
+      gachaResultBox.select();
+      document.execCommand("copy");
+      toast("コピー");
+    }catch{
+      alert("コピーに失敗しました。");
+    }
+  }
+});
+
+/* =========================
+   LIVE render
+========================= */
+function renderGachaVisibility(c){
+  const isGacha = normalizeCampaignType(c.type) === "gacha";
+  liveGachaCard?.classList.toggle("hidden", !isGacha);
+  liveInputCard?.classList.toggle("hidden", isGacha);
+}
+
+function renderListenerUI(c){
+  const names = getAllKnownListeners(c.id);
+  const active = getActiveListener(c.id);
+
+  // 通常
+  fillSelect(listenerSelect, names, active);
+
+  // ガチャ
+  fillSelect(gachaListenerSelect, names, active);
+}
+
+function renderLive(){
+  const c = getCurrentCampaign();
+  if(!c){ location.hash="#tasks"; return; }
+
+  const done = isCampaignDone(c);
+  const statusLabel = done ? "完了" : "未完了";
+
+  if(liveTitle) liveTitle.textContent = c.name;
+  if(liveMeta) liveMeta.textContent = `${c.start_date} / ${statusLabel}`;
+  if(goConfirmBtn) goConfirmBtn.href = `#campaign=${c.id}`;
+
+  renderGachaVisibility(c);
+  renderRewardList(c);
+  renderListenerUI(c);
+  renderLiveTable(liveLeaderboardBody, c);
+  setLiveMsg("");
+}
+
+/* =========================
+   Backup / Restore
+========================= */
+document.getElementById("exportBtn")?.addEventListener("click", ()=>{
+  const blob = new Blob([JSON.stringify(state,null,2)], {type:"application/json"});
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = `reward-task-backup-${new Date().toISOString().slice(0,10)}.json`;
+  a.click();
+  URL.revokeObjectURL(a.href);
+  toast("バックアップ");
+});
+document.getElementById("importFile")?.addEventListener("change", async (e)=>{
+  const file = e.target.files?.[0];
+  if(!file) return;
+  const text = await file.text();
+  try{
+    const obj = JSON.parse(text);
+    state = {
+      campaigns: Array.isArray(obj.campaigns) ? obj.campaigns : [],
+      logs: Array.isArray(obj.logs) ? obj.logs : [],
+      delivery: (obj.delivery && typeof obj.delivery === "object") ? obj.delivery : {},
+      gacha_history: (obj.gacha_history && typeof obj.gacha_history === "object") ? obj.gacha_history : {},
+      listener_pool: (obj.listener_pool && typeof obj.listener_pool === "object") ? obj.listener_pool : {},
+      active_listener: (obj.active_listener && typeof obj.active_listener === "object") ? obj.active_listener : {},
+    };
+    migrate();
+    saveState();
+    toast("復元");
+    route();
+    renderAll();
+  }catch{
+    alert("復元に失敗：JSONが不正です。");
+  }finally{
+    e.target.value = "";
+  }
+});
+
+/* =========================
+   renderAll
+========================= */
+function renderAll(){
+  renderHome();
+  renderCampaigns();
+
+  const h = location.hash || "";
+  if(h.startsWith("#tasks")) renderTaskCampaignList();
+  if(h.startsWith("#campaign=")) renderCampaign();
+  if(h.startsWith("#live=")) renderLive();
+}
+
+/* init */
+if(createTypeSelect){
+  setCreateTypeUI(createTypeSelect.value);
+}
+route();
+renderAll();
