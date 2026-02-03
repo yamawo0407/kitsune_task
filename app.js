@@ -6,7 +6,7 @@
 const jsStatus = document.getElementById("jsStatus");
 if (jsStatus) jsStatus.textContent = "JS: OK";
 
-const STORAGE_KEY = "reward_task_manager_v18";
+const STORAGE_KEY = "reward_task_manager_v19";
 
 function uid(){ return Math.random().toString(16).slice(2) + Date.now().toString(16); }
 function escapeHtml(s){
@@ -242,7 +242,7 @@ function getActiveListener(campaignId){
 }
 
 /* =========================
-   Purchases (shopping)
+   Purchases / Gacha history (表示用)
 ========================= */
 function getPurchaseMap(campaignId){
   if(!state.purchases[campaignId] || typeof state.purchases[campaignId] !== "object") state.purchases[campaignId] = {};
@@ -253,20 +253,6 @@ function getPurchases(campaignId, listenerName){
   if(!Array.isArray(m[listenerName])) m[listenerName] = [];
   return m[listenerName];
 }
-function addPurchase(campaign, listenerName, cost, reward){
-  const arr = getPurchases(campaign.id, listenerName);
-  arr.push({ cost, reward, at: new Date().toISOString() });
-  saveState();
-}
-function undoPurchase(campaign, listenerName){
-  const arr = getPurchases(campaign.id, listenerName);
-  if(arr.length>0){ arr.pop(); saveState(); return true; }
-  return false;
-}
-
-/* =========================
-   Gacha history
-========================= */
 function getGachaCampaignMap(campaignId){
   if(!state.gacha_history[campaignId] || typeof state.gacha_history[campaignId] !== "object"){
     state.gacha_history[campaignId] = {};
@@ -580,11 +566,7 @@ function renderRewardCell(campaign, listenerName, points){
     return `<div class="shopItems">${list.map(x=>`<span class="shopItemChip">${escapeHtml(`${x.cost}pt達成：${x.reward}`)}</span>`).join("")}</div>`;
   }
 
-  // shopping: 表示だけ（購入ボタン等は今回省略）
-  const rules = rulesSorted(campaign.rules).map(r=>({cost:r.threshold, reward:r.reward}));
-  if(!rules.length) return `<div class="muted">—</div>`;
-
-  // 残pt計算（購入管理を使うならここを拡張）
+  // shopping: 表示のみ（購入UIは省略）
   const purchases = getPurchases(campaign.id, listenerName);
   const spent = purchases.reduce((s,x)=> s + (x.cost||0), 0);
   const remaining = points - spent;
@@ -671,7 +653,6 @@ const rewardListBox = document.getElementById("rewardListBox");
 const liveGachaCard = document.getElementById("liveGachaCard");
 const liveInputCard = document.getElementById("liveInputCard");
 
-const activeListenerLabel = document.getElementById("activeListenerLabel");
 const clearActiveBtn = document.getElementById("clearActiveBtn");
 const listenerNameInput = document.getElementById("listenerNameInput");
 
@@ -684,6 +665,10 @@ const gachaPtInput = document.getElementById("gachaPtInput");
 const gachaRollBtn = document.getElementById("gachaRollBtn");
 const gachaResultBox = document.getElementById("gachaResultBox");
 const gachaCopyBtn = document.getElementById("gachaCopyBtn");
+
+/* 入力欄は「現在の対象者」を常に表示したいので、フォーカスで全選択 */
+listenerNameInput?.addEventListener("focus", ()=> listenerNameInput.select());
+listenerNameInput?.addEventListener("click", ()=> listenerNameInput.select());
 
 function renderRewardList(c){
   if(!rewardListBox) return;
@@ -709,11 +694,7 @@ function renderRewardList(c){
     : `<div class="muted">返礼品なし</div>`;
 }
 
-function renderActiveLabel(campaignId){
-  const name = getActiveListener(campaignId);
-  if(activeListenerLabel) activeListenerLabel.textContent = name || "未選択";
-}
-
+/* ✅表タップで active を切り替え、名前入力欄にも反映 */
 function renderRewardTableLiveTapToSelect(tbodyEl, campaign){
   if(!tbodyEl) return;
 
@@ -736,22 +717,21 @@ function renderRewardTableLiveTapToSelect(tbodyEl, campaign){
     `;
   }).join("");
 
-  // ✅行タップで active を切り替え
   tbodyEl.querySelectorAll("tr[data-listener]").forEach(tr=>{
     tr.addEventListener("click", ()=>{
       const name = (tr.getAttribute("data-listener") || "").trim();
       if(!name) return;
 
       setActiveListener(campaign.id, name);
-      renderActiveLabel(campaign.id);
+
+      // ✅名前欄に現在の入力対象を表示
+      if(listenerNameInput) listenerNameInput.value = name;
 
       // 見た目のactive反映
       tbodyEl.querySelectorAll("tr.tapRow").forEach(x=>x.classList.remove("active"));
       tr.classList.add("active");
 
-      // 入力を促すために右側へ軽くスクロール（任意）
       liveInputCard?.scrollIntoView({ behavior:"smooth", block:"start" });
-
       toast(name);
     });
   });
@@ -793,7 +773,7 @@ function undoLastLog(){
   }
 }
 
-/* ✅名前入力：1回入力したら登録＆選択（0.4秒停止で確定） */
+/* ✅名前入力：確定したら「入力欄に残す」 */
 let nameDebounceTimer = null;
 listenerNameInput?.addEventListener("input", ()=>{
   const c = getCurrentCampaign();
@@ -805,10 +785,12 @@ listenerNameInput?.addEventListener("input", ()=>{
     if(!name) return;
 
     setActiveListener(c.id, name);
-    listenerNameInput.value = "";
-    renderActiveLabel(c.id);
-    renderAll(); // テーブル側のactive表示を更新
-    toast("追加");
+
+    // ✅消さない。入力欄に残す（今の対象者が見える）
+    listenerNameInput.value = name;
+
+    renderAll();
+    toast("確定");
   }, 400);
 });
 listenerNameInput?.addEventListener("keydown", (e)=>{
@@ -816,13 +798,15 @@ listenerNameInput?.addEventListener("keydown", (e)=>{
     e.preventDefault();
     const c = getCurrentCampaign();
     if(!c) return;
+
     const name = (listenerNameInput.value||"").trim();
     if(!name) return;
+
     setActiveListener(c.id, name);
-    listenerNameInput.value = "";
-    renderActiveLabel(c.id);
+    listenerNameInput.value = name;
+
     renderAll();
-    toast("追加");
+    toast("確定");
   }
 });
 
@@ -830,7 +814,7 @@ clearActiveBtn?.addEventListener("click", ()=>{
   const c = getCurrentCampaign();
   if(!c) return;
   setActiveListener(c.id, "");
-  renderActiveLabel(c.id);
+  if(listenerNameInput) listenerNameInput.value = "";
   renderAll();
   toast("解除");
 });
@@ -899,8 +883,8 @@ function rollGacha(user, pt){
     return toast("回せない");
   }
 
-  // userをpoolに追加 & activeにもする（ガチャ用）
   setActiveListener(c.id, user);
+  if(listenerNameInput) listenerNameInput.value = user;
 
   const results = [];
   for(let i=0;i<calc.total;i++){
@@ -916,7 +900,6 @@ function rollGacha(user, pt){
   });
   addGachaResult(c.id, user, pt, results);
 
-  // 番号なし、被り×n、使用pt表記なし
   const count = new Map();
   for(const r of results) count.set(r, (count.get(r) || 0) + 1);
   const lines = Array.from(count.entries())
@@ -941,8 +924,7 @@ gachaRollBtn?.addEventListener("click", ()=>{
   if(!user) return toast("名前");
   if(!Number.isFinite(pt) || pt<=0) return toast("pt");
 
-  // 入力欄は残しても良いが、ここは消す方が事故が減る
-  gachaUserInput.value = "";
+  gachaUserInput.value = user; // 入力者も見えるように残す
   rollGacha(user, pt);
 });
 gachaCopyBtn?.addEventListener("click", async ()=>{
@@ -985,8 +967,12 @@ function renderLive(){
 
   renderGachaVisibility(c);
   renderRewardList(c);
-  renderActiveLabel(c.id);
   renderRewardTableLiveTapToSelect(liveLeaderboardBody, c);
+
+  // ✅ページを開いた時、activeがあれば名前欄に表示
+  const active = getActiveListener(c.id);
+  if(listenerNameInput) listenerNameInput.value = active || "";
+
   setLiveMsg("");
 }
 
