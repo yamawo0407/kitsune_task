@@ -40,7 +40,6 @@
           <div class="choice-icon">✅</div>
           <div class="choice-main">タスク管理</div>
         </a>
-
         <a class="choice-card" href="#campaigns">
           <div class="choice-icon">📌</div>
           <div class="choice-main">企画作成</div>
@@ -186,7 +185,7 @@
     </section>
   </main>
 
-  <!-- ===== CAMPAIGN CONFIRM ===== -->
+  <!-- ===== CAMPAIGN (返礼品状況一覧) ===== -->
   <main id="view-campaign" class="wrap stack hidden">
     <section class="pagehead">
       <div>
@@ -201,81 +200,7 @@
 
       <div class="row gap wrapBtns">
         <a id="goLiveBtn" class="btn ghost" href="#live=">リアルタイム編集</a>
-        <button id="toggleEditModeBtn" class="btn primary" type="button">編集</button>
       </div>
-    </section>
-
-    <section class="card hidden" id="campaignEditPanel">
-      <div class="card-head">
-        <div class="card-title">企画編集</div>
-      </div>
-
-      <form id="editCampaignForm" class="stack">
-        <label class="field">
-          <span>企画名</span>
-          <input class="input" name="name" required />
-        </label>
-
-        <label class="field">
-          <span>開始日</span>
-          <input class="input" type="date" name="start_date" required />
-        </label>
-
-        <label class="field">
-          <span>方式</span>
-          <select class="input" name="type" id="editTypeSelect">
-            <option value="achievement">達成型</option>
-            <option value="shopping">お買い物方式</option>
-            <option value="gacha">ガチャ</option>
-          </select>
-        </label>
-
-        <section id="editRulesSection" class="stack">
-          <div class="ruleHead">
-            <div class="card-title">返礼品</div>
-            <button id="editAddRuleRowBtn" type="button" class="btn ghost">＋行を追加</button>
-          </div>
-          <div id="editRulesBox" class="rulesBox"></div>
-        </section>
-
-        <section id="editGachaSection" class="stack hidden">
-          <div class="grid2">
-            <label class="field">
-              <span>1回の必要pt</span>
-              <input class="input" type="number" min="1" step="1" name="g_singleCost" />
-            </label>
-            <label class="field">
-              <span>何ptで何連（pt）</span>
-              <input class="input" type="number" min="1" step="1" name="g_multiCost" />
-            </label>
-          </div>
-
-          <div class="grid2">
-            <label class="field">
-              <span>何ptで何連（連数）</span>
-              <input class="input" type="number" min="1" step="1" name="g_multiCount" />
-            </label>
-            <div></div>
-          </div>
-
-          <div class="ruleHead">
-            <div class="card-title">景品（出現率%）</div>
-            <button id="editAddGachaRowBtn" type="button" class="btn ghost">＋行を追加</button>
-          </div>
-          <div id="editGachaItemsBox" class="rulesBox"></div>
-        </section>
-
-        <div class="row gap wrapBtns">
-          <button class="btn primary" type="submit">保存</button>
-          <button id="closeEditCampaignBtn" class="btn ghost" type="button">閉じる</button>
-        </div>
-
-        <div class="divider"></div>
-
-        <div class="row gap wrapBtns">
-          <button id="deleteCampaignBtn" class="btn danger" type="button">企画削除</button>
-        </div>
-      </form>
     </section>
 
     <section class="card">
@@ -295,10 +220,6 @@
         <tbody id="leaderboardBody"></tbody>
       </table>
     </section>
-
-    <section class="stack">
-      <div id="taskList" class="taskList"></div>
-    </section>
   </main>
 
   <!-- ===== LIVE ===== -->
@@ -307,41 +228,49 @@
       <div>
         <div class="row gap wrapBtns">
           <a class="btn ghost" href="#tasks">←</a>
-          <a id="goConfirmBtn" class="btn ghost" href="#campaign=">確認</a>
+          <a id="goConfirmBtn" class="btn ghost" href="#campaign=">返礼品状況一覧</a>
           <div class="pill">リアルタイム編集</div>
         </div>
         <div class="h1" id="liveTitle"></div>
         <div class="muted" id="liveMeta"></div>
       </div>
-
-      <div class="row gap wrapBtns">
-        <a id="goTaskEditBtn" class="btn primary" href="#campaign=">返礼品状況一覧</a>
-      </div>
     </section>
 
-    <!-- ガチャ企画のときだけ表示 -->
+    <!-- ガチャ企画だけ表示 -->
     <section id="liveGachaCard" class="card hidden">
       <div class="card-head">
         <div class="card-title">ガチャ</div>
       </div>
 
-      <div class="grid2">
+      <div class="stack">
+        <div class="grid2">
+          <label class="field">
+            <span>新しい名前</span>
+            <input id="gachaAddNameInput" class="input" placeholder="入力して追加" />
+          </label>
+          <div class="field">
+            <span>&nbsp;</span>
+            <button id="gachaAddNameBtn" class="btn primary" type="button">追加</button>
+          </div>
+        </div>
+
         <label class="field">
-          <span>回した人</span>
-          <select id="gachaUserSelect" class="input"></select>
+          <span>リスナー</span>
+          <select id="gachaListenerSelect" class="input"></select>
         </label>
+
         <label class="field">
           <span>使用pt</span>
           <input id="gachaPtInput" class="input" type="number" min="0" step="1" placeholder="例：3000" />
         </label>
-      </div>
 
-      <div class="row gap wrapBtns">
-        <button id="gachaRollBtn" class="btn primary" type="button">回す</button>
-        <button id="gachaCopyBtn" class="btn ghost" type="button">コピー</button>
-      </div>
+        <div class="row gap wrapBtns">
+          <button id="gachaRollBtn" class="btn primary" type="button">回す</button>
+          <button id="gachaCopyBtn" class="btn ghost" type="button">コピー</button>
+        </div>
 
-      <textarea id="gachaResultBox" class="textarea" rows="8" readonly></textarea>
+        <textarea id="gachaResultBox" class="textarea" rows="8" readonly></textarea>
+      </div>
     </section>
 
     <section class="card">
@@ -363,29 +292,38 @@
               <th>名前</th>
               <th class="right">合計pt</th>
               <th class="center">返礼品</th>
-              <th>状況</th>
             </tr>
           </thead>
           <tbody id="liveLeaderboardBody"></tbody>
         </table>
       </section>
 
-      <!-- ガチャのときはJSで非表示 -->
+      <!-- ガチャ企画以外だけ表示 -->
       <section id="liveInputCard" class="card">
         <div class="card-head">
           <div class="card-title">ライブ入力</div>
         </div>
 
         <div class="stack">
+          <div class="grid2">
+            <label class="field">
+              <span>新しい名前</span>
+              <input id="addNameInput" class="input" placeholder="入力して追加" />
+            </label>
+            <div class="field">
+              <span>&nbsp;</span>
+              <button id="addNameBtn" class="btn primary" type="button">追加</button>
+            </div>
+          </div>
+
           <label class="field">
             <span>リスナー</span>
             <select id="listenerSelect" class="input"></select>
           </label>
 
-          <label class="field">
-            <span>新しい名前</span>
-            <input id="listenerNewName" class="input" placeholder="表示名（入力→自動追加）" />
-          </label>
+          <div class="row gap wrapBtns">
+            <button id="clearActiveBtn" class="btn ghost small" type="button">解除</button>
+          </div>
 
           <div class="row wrapBtns">
             <button class="btn" type="button" data-add="100">+100</button>
