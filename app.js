@@ -1,12 +1,12 @@
 "use strict";
 
 /* =========================
-   基本
+   Utils
 ========================= */
 const jsStatus = document.getElementById("jsStatus");
 if (jsStatus) jsStatus.textContent = "JS: OK";
 
-const STORAGE_KEY = "reward_task_manager_v14";
+const STORAGE_KEY = "reward_task_manager_v20";
 
 function uid(){ return Math.random().toString(16).slice(2) + Date.now().toString(16); }
 function escapeHtml(s){
@@ -26,7 +26,7 @@ function toast(msg){
 }
 
 /* =========================
-   state（localStorage）
+   State
 ========================= */
 function loadState(){
   try{
@@ -36,12 +36,12 @@ function loadState(){
       campaigns: Array.isArray(s.campaigns) ? s.campaigns : [],
       logs: Array.isArray(s.logs) ? s.logs : [],
       delivery: (s.delivery && typeof s.delivery === "object") ? s.delivery : {},
-      purchases: (s.purchases && typeof s.purchases === "object") ? s.purchases : {},
       gacha_history: (s.gacha_history && typeof s.gacha_history === "object") ? s.gacha_history : {},
       listener_pool: (s.listener_pool && typeof s.listener_pool === "object") ? s.listener_pool : {},
+      active_listener: (s.active_listener && typeof s.active_listener === "object") ? s.active_listener : {},
     };
   }catch{
-    return { campaigns: [], logs: [], delivery: {}, purchases: {}, gacha_history: {}, listener_pool: {} };
+    return { campaigns: [], logs: [], delivery: {}, gacha_history: {}, listener_pool: {}, active_listener:{} };
   }
 }
 let state = loadState();
@@ -56,7 +56,7 @@ function ensureGacha(c){
   }
   if(!Array.isArray(c.gacha.items)) c.gacha.items = [];
   c.gacha.singleCost = Number(c.gacha.singleCost||0);
-  c.gacha.multiCost = Number(c.gacha.multiCost||0);
+  c.gacha.multiCost  = Number(c.gacha.multiCost||0);
   c.gacha.multiCount = Number(c.gacha.multiCount||0);
 }
 function migrate(){
@@ -66,14 +66,14 @@ function migrate(){
     if(c.type === "gacha") ensureGacha(c);
   });
   if(!state.delivery || typeof state.delivery !== "object") state.delivery = {};
-  if(!state.purchases || typeof state.purchases !== "object") state.purchases = {};
   if(!state.gacha_history || typeof state.gacha_history !== "object") state.gacha_history = {};
   if(!state.listener_pool || typeof state.listener_pool !== "object") state.listener_pool = {};
+  if(!state.active_listener || typeof state.active_listener !== "object") state.active_listener = {};
 }
 migrate(); saveState();
 
 /* =========================
-   画面切替（SPA）
+   SPA routing
 ========================= */
 const views = {
   home: document.getElementById("view-home"),
@@ -155,7 +155,7 @@ function route(){
 window.addEventListener("hashchange", ()=>{ route(); renderAll(); });
 
 /* =========================
-   計算系
+   Calculations
 ========================= */
 function rulesSorted(rules){
   return (Array.isArray(rules) ? rules : [])
@@ -179,6 +179,7 @@ function computeTotalsForCampaign(campaignId){
   return rows;
 }
 
+/* 完了管理 */
 function getDeliveryMap(campaignId){
   if (!state.delivery[campaignId] || typeof state.delivery[campaignId] !== "object") state.delivery[campaignId] = {};
   return state.delivery[campaignId];
@@ -192,14 +193,11 @@ function setDeliveryStatus(campaignId, listenerName, status){
   m[listenerName] = (status === "done") ? "done" : "open";
   saveState();
 }
-
-/* 企画完了判定：1人でも未完了なら未完了 */
 function isCampaignDone(campaign){
   const totals = computeTotalsForCampaign(campaign.id);
   if(totals.length === 0) return false;
   return totals.every(r => getDeliveryStatus(campaign.id, r.listener_name) === "done");
 }
-
 function campaignSortDesc(a,b){
   const ad = (a.start_date||"");
   const bd = (b.start_date||"");
@@ -210,7 +208,7 @@ function campaignSortDesc(a,b){
 }
 
 /* =========================
-   listener pool（select候補）
+   Listener pool + Active
 ========================= */
 function getListenerPool(campaignId){
   if(!state.listener_pool[campaignId] || !Array.isArray(state.listener_pool[campaignId])){
@@ -225,35 +223,33 @@ function addListenerToPool(campaignId, name){
   if(!pool.includes(n)){
     pool.push(n);
     pool.sort((a,b)=>a.localeCompare(b));
-    saveState();
   }
-}
-
-/* =========================
-   お買い物方式（購入履歴）
-========================= */
-function getPurchaseMap(campaignId){
-  if(!state.purchases[campaignId] || typeof state.purchases[campaignId] !== "object") state.purchases[campaignId] = {};
-  return state.purchases[campaignId];
-}
-function getPurchases(campaignId, listenerName){
-  const m = getPurchaseMap(campaignId);
-  if(!Array.isArray(m[listenerName])) m[listenerName] = [];
-  return m[listenerName];
-}
-function addPurchase(campaign, listenerName, cost, reward){
-  const arr = getPurchases(campaign.id, listenerName);
-  arr.push({ cost, reward, at: new Date().toISOString() });
   saveState();
 }
-function undoPurchase(campaign, listenerName){
-  const arr = getPurchases(campaign.id, listenerName);
-  if(arr.length>0){ arr.pop(); saveState(); return true; }
-  return false;
+function setActiveListener(campaignId, name){
+  const n = (name||"").trim();
+  if(!n){
+    delete state.active_listener[campaignId];
+  }else{
+    addListenerToPool(campaignId, n);
+    state.active_listener[campaignId] = n;
+  }
+  saveState();
+}
+function getActiveListener(campaignId){
+  return (state.active_listener[campaignId] || "").trim();
+}
+
+/* プルダウン候補：pool + 集計に出てる名前の union */
+function getAllKnownListeners(campaignId){
+  const pool = getListenerPool(campaignId).slice();
+  const totals = computeTotalsForCampaign(campaignId).map(r=>r.listener_name);
+  const set = new Set([...pool, ...totals].map(x=>x.trim()).filter(Boolean));
+  return Array.from(set).sort((a,b)=>a.localeCompare(b));
 }
 
 /* =========================
-   ガチャ履歴
+   Gacha history
 ========================= */
 function getGachaCampaignMap(campaignId){
   if(!state.gacha_history[campaignId] || typeof state.gacha_history[campaignId] !== "object"){
@@ -305,7 +301,7 @@ function renderHome(){
 }
 
 /* =========================
-   企画作成：ルール入力UI
+   Campaign create
 ========================= */
 function addRuleRow(container, threshold="", reward=""){
   const el = document.createElement("div");
@@ -337,7 +333,6 @@ function collectRulesFrom(container){
   rules.sort((a,b)=>a.threshold-b.threshold);
   return rules;
 }
-
 function addGachaRow(container, name="", rate=""){
   const el = document.createElement("div");
   el.className = "ruleRow";
@@ -351,693 +346,3 @@ function addGachaRow(container, name="", rate=""){
       <input class="input" type="number" min="0" step="0.01" data-g-rate value="${escapeHtml(rate)}" />
     </label>
     <div class="field">
-      <span>&nbsp;</span>
-      <button class="btn ghost" type="button" data-del>削除</button>
-    </div>
-  `;
-  el.querySelector("[data-del]").addEventListener("click", ()=>el.remove());
-  container.appendChild(el);
-}
-function collectGachaItemsFrom(container){
-  const items = [];
-  container.querySelectorAll(".ruleRow").forEach(row=>{
-    const name = (row.querySelector("[data-g-name]")?.value||"").toString().trim();
-    const rate = parseFloat(row.querySelector("[data-g-rate]")?.value);
-    if(name && Number.isFinite(rate) && rate > 0) items.push({ name, rate });
-  });
-  return items;
-}
-
-/* =========================
-   企画作成（画面）
-========================= */
-const campaignListEl = document.getElementById("campaignList");
-const campaignSearchEl = document.getElementById("campaignSearch");
-
-const createCampaignForm = document.getElementById("createCampaignForm");
-const createTypeSelect = document.getElementById("createTypeSelect");
-const createRulesSection = document.getElementById("createRulesSection");
-const createGachaSection = document.getElementById("createGachaSection");
-const rulesBox = document.getElementById("rulesBox");
-const addRuleRowBtn = document.getElementById("addRuleRowBtn");
-const addGachaRowBtn = document.getElementById("addGachaRowBtn");
-const gachaItemsBox = document.getElementById("gachaItemsBox");
-
-function setCreateTypeUI(type){
-  const isGacha = type === "gacha";
-  createRulesSection?.classList.toggle("hidden", isGacha);
-  createGachaSection?.classList.toggle("hidden", !isGacha);
-}
-
-createTypeSelect?.addEventListener("change", ()=> setCreateTypeUI(createTypeSelect.value));
-
-addRuleRowBtn?.addEventListener("click", ()=> rulesBox && addRuleRow(rulesBox, "", ""));
-if(rulesBox && rulesBox.children.length===0){
-  addRuleRow(rulesBox, "1000", "デジグッズA");
-  addRuleRow(rulesBox, "3000", "デジグッズB");
-}
-
-addGachaRowBtn?.addEventListener("click", ()=> gachaItemsBox && addGachaRow(gachaItemsBox, "", ""));
-if(gachaItemsBox && gachaItemsBox.children.length===0){
-  addGachaRow(gachaItemsBox, "SSR", "1");
-  addGachaRow(gachaItemsBox, "SR", "9");
-  addGachaRow(gachaItemsBox, "R", "90");
-}
-
-createCampaignForm?.addEventListener("submit",(e)=>{
-  e.preventDefault();
-  const fd = new FormData(createCampaignForm);
-
-  const name = (fd.get("name")||"").toString().trim();
-  const start_date = (fd.get("start_date")||"").toString().trim();
-  const type = normalizeCampaignType((fd.get("type")||"achievement").toString());
-  if(!name || !start_date) return;
-
-  const campaign = {
-    id: uid(),
-    name,
-    start_date,
-    type,
-    rules: [],
-    created_at: new Date().toISOString(),
-  };
-
-  if(type === "gacha"){
-    const singleCost = Number(fd.get("g_singleCost")||0);
-    const multiCost  = Number(fd.get("g_multiCost")||0);
-    const multiCount = Number(fd.get("g_multiCount")||0);
-    const items = gachaItemsBox ? collectGachaItemsFrom(gachaItemsBox) : [];
-    campaign.gacha = { singleCost, multiCost, multiCount, items };
-    ensureGacha(campaign);
-  }else{
-    campaign.rules = rulesBox ? collectRulesFrom(rulesBox) : [];
-  }
-
-  state.campaigns.unshift(campaign);
-  saveState();
-  createCampaignForm.reset();
-
-  if(createTypeSelect){
-    createTypeSelect.value = "achievement";
-    setCreateTypeUI("achievement");
-  }
-
-  renderAll();
-  toast("作成");
-});
-
-campaignSearchEl?.addEventListener("input", renderCampaigns);
-
-function deleteCampaign(campaignId){
-  state.campaigns = state.campaigns.filter(x=>x.id!==campaignId);
-  state.logs = state.logs.filter(x=>x.campaign_id!==campaignId);
-  delete state.delivery[campaignId];
-  delete state.purchases[campaignId];
-  delete state.gacha_history[campaignId];
-  delete state.listener_pool[campaignId];
-}
-
-function renderCampaigns(){
-  if(!campaignListEl) return;
-  const q = (campaignSearchEl?.value||"").trim().toLowerCase();
-
-  const list = state.campaigns
-    .filter(c => (c.name||"").toLowerCase().includes(q))
-    .slice()
-    .sort(campaignSortDesc);
-
-  if(!list.length){
-    campaignListEl.innerHTML = `<div class="muted">企画がありません。</div>`;
-    return;
-  }
-
-  campaignListEl.innerHTML = list.map(c=>{
-    const done = isCampaignDone(c);
-    const statusLabel = done ? "完了" : "未完了";
-    const statusBadge = done ? "✅" : "🔴";
-    return `
-      <div class="item">
-        <div>
-          <div><strong>${escapeHtml(c.name)}</strong></div>
-          <div class="muted">${escapeHtml(c.start_date)} / ${statusLabel}</div>
-        </div>
-        <div class="itemActions">
-          <button class="btn ghost small" type="button" data-open="${c.id}">確認</button>
-          <button class="btn ghost small" type="button" data-live="${c.id}">リアルタイム</button>
-          <button class="btn danger micro" type="button" data-del="${c.id}">削除</button>
-          <div style="font-size:18px;">${statusBadge}</div>
-        </div>
-      </div>
-    `;
-  }).join("");
-
-  campaignListEl.querySelectorAll("[data-open]").forEach(btn=>{
-    btn.addEventListener("click",()=> location.hash = `#campaign=${btn.getAttribute("data-open")}`);
-  });
-  campaignListEl.querySelectorAll("[data-live]").forEach(btn=>{
-    btn.addEventListener("click",()=> location.hash = `#live=${btn.getAttribute("data-live")}`);
-  });
-  campaignListEl.querySelectorAll("[data-del]").forEach(btn=>{
-    btn.addEventListener("click",()=>{
-      const id = btn.getAttribute("data-del");
-      const c = state.campaigns.find(x=>x.id===id);
-      if(!c) return;
-      if(!confirm(`「${c.name}」を削除します。OK？`)) return;
-      deleteCampaign(id);
-      saveState();
-      renderAll();
-      toast("削除");
-    });
-  });
-}
-
-/* =========================
-   タスク管理（企画一覧）
-========================= */
-const taskCampaignListEl = document.getElementById("taskCampaignList");
-document.getElementById("filterAllCampaigns")?.addEventListener("click", ()=>{ taskPageFilter="all"; renderTaskCampaignList(); });
-document.getElementById("filterOpenCampaigns")?.addEventListener("click", ()=>{ taskPageFilter="open"; renderTaskCampaignList(); });
-document.getElementById("filterDoneCampaigns")?.addEventListener("click", ()=>{ taskPageFilter="done"; renderTaskCampaignList(); });
-
-function filterCampaignsByListMode(list, campaigns){
-  if(list==="open") return campaigns.filter(c=>!isCampaignDone(c));
-  if(list==="done") return campaigns.filter(c=>isCampaignDone(c));
-  return campaigns;
-}
-
-function renderTaskCampaignList(){
-  if(!taskCampaignListEl) return;
-
-  let list = state.campaigns.slice().sort(campaignSortDesc);
-  list = filterCampaignsByListMode(taskPageFilter, list);
-
-  if(!list.length){
-    taskCampaignListEl.innerHTML = `<div class="muted">該当する企画がありません。</div>`;
-    return;
-  }
-
-  taskCampaignListEl.innerHTML = list.map(c=>{
-    const done = isCampaignDone(c);
-    const statusBadge = done ? "✅" : "🔴";
-    const statusLabel = done ? "完了" : "未完了";
-    return `
-      <div class="item itemClickable" data-open="${c.id}">
-        <div>
-          <div><strong>${escapeHtml(c.name)}</strong></div>
-          <div class="muted">${escapeHtml(c.start_date)} / ${statusLabel}</div>
-        </div>
-        <div class="itemActions">
-          <div style="font-size:18px;">${statusBadge}</div>
-        </div>
-      </div>
-    `;
-  }).join("");
-
-  taskCampaignListEl.querySelectorAll(".itemClickable").forEach(el=>{
-    el.addEventListener("click",()=> location.hash = `#campaign=${el.getAttribute("data-open")}`);
-  });
-}
-
-/* =========================
-   返礼品状況一覧（campaign）
-========================= */
-const campaignTitleEl = document.getElementById("campaignTitle");
-const campaignMetaEl = document.getElementById("campaignMeta");
-const campaignStatusPill = document.getElementById("campaignStatusPill");
-const goLiveBtn = document.getElementById("goLiveBtn");
-const leaderboardBody = document.getElementById("leaderboardBody");
-
-function renderRewardCell(campaign, listenerName, points){
-  const type = normalizeCampaignType(campaign.type);
-
-  if(type === "gacha"){
-    const chips = gachaSummaryChips(campaign.id, listenerName);
-    if(!chips.length) return `<div class="muted">—</div>`;
-    return `<div class="shopItems">${chips.map(x=>`<span class="shopItemChip">${escapeHtml(x)}</span>`).join("")}</div>`;
-  }
-
-  if(type === "achievement"){
-    const list = achievedRewards(campaign, points);
-    if(list.length === 0) return `<div class="muted">—</div>`;
-    return `<div class="shopItems">${list.map(x=>`<span class="shopItemChip">${escapeHtml(`${x.cost}pt達成：${x.reward}`)}</span>`).join("")}</div>`;
-  }
-
-  // shopping
-  const rules = rulesSorted(campaign.rules).map(r=>({cost:r.threshold, reward:r.reward}));
-  const purchases = getPurchases(campaign.id, listenerName);
-  const spent = purchases.reduce((s,x)=> s + (x.cost||0), 0);
-  const remaining = points - spent;
-
-  const purchasedChips = purchases.length
-    ? `<div class="shopItems">${purchases.map(x=>`<span class="shopItemChip">${escapeHtml(`${x.cost}：${x.reward}`)}</span>`).join("")}</div>`
-    : `<div class="muted">—</div>`;
-
-  const buyButtons = rules.length
-    ? `<div class="shopBuyList">${rules.map(x=>{
-        const disabled = remaining < x.cost;
-        return `<button class="shopBuyBtn" type="button" data-buy="${escapeHtml(listenerName)}" data-cost="${x.cost}" data-reward="${escapeHtml(x.reward)}" ${disabled?"disabled":""}>${escapeHtml(`${x.cost}：${x.reward}`)}</button>`;
-      }).join("")}</div>`
-    : `<div class="muted">—</div>`;
-
-  return `
-    <div class="shopBox">
-      <div class="shopRemaining">残pt：${remaining}</div>
-      ${purchasedChips}
-      ${buyButtons}
-      <div class="row gap wrapBtns" style="margin-top:6px;">
-        <button class="btn ghost micro" type="button" data-undo-buy="${escapeHtml(listenerName)}">取り消し</button>
-      </div>
-    </div>
-  `;
-}
-
-function renderRewardTable(tbodyEl, campaign){
-  if(!tbodyEl) return;
-
-  const totals = computeTotalsForCampaign(campaign.id);
-  if(!totals.length){
-    tbodyEl.innerHTML = `<tr><td colspan="4" class="muted">データなし</td></tr>`;
-    return;
-  }
-
-  tbodyEl.innerHTML = totals.map(r=>{
-    const status = getDeliveryStatus(campaign.id, r.listener_name);
-    return `
-      <tr>
-        <td>${escapeHtml(r.listener_name)}</td>
-        <td class="right">${r.points}</td>
-        <td class="center">${renderRewardCell(campaign, r.listener_name, r.points)}</td>
-        <td>
-          <select class="input" data-delivery="${escapeHtml(r.listener_name)}">
-            <option value="open" ${status==="open"?"selected":""}>未完了</option>
-            <option value="done" ${status==="done"?"selected":""}>完了</option>
-          </select>
-        </td>
-      </tr>
-    `;
-  }).join("");
-
-  tbodyEl.querySelectorAll("[data-delivery]").forEach(sel=>{
-    sel.addEventListener("change", ()=>{
-      const name = sel.getAttribute("data-delivery");
-      setDeliveryStatus(campaign.id, name, sel.value);
-      toast("更新");
-      renderAll();
-    });
-  });
-
-  // shopping buy buttons
-  tbodyEl.querySelectorAll("[data-buy]").forEach(btn=>{
-    btn.addEventListener("click", ()=>{
-      const name = btn.getAttribute("data-buy");
-      const cost = parseInt(btn.getAttribute("data-cost"),10);
-      const reward = btn.getAttribute("data-reward");
-      addPurchase(campaign, name, cost, reward);
-      toast("購入");
-      renderAll();
-    });
-  });
-  tbodyEl.querySelectorAll("[data-undo-buy]").forEach(btn=>{
-    btn.addEventListener("click", ()=>{
-      const name = btn.getAttribute("data-undo-buy");
-      const ok = undoPurchase(campaign, name);
-      toast(ok ? "取り消し" : "なし");
-      renderAll();
-    });
-  });
-}
-
-function renderCampaign(){
-  const c = getCurrentCampaign();
-  if(!c){ location.hash="#tasks"; return; }
-
-  const done = isCampaignDone(c);
-  const statusLabel = done ? "完了" : "未完了";
-
-  if(campaignTitleEl) campaignTitleEl.textContent = c.name;
-  if(campaignMetaEl) campaignMetaEl.textContent = `${c.start_date}`;
-  if(campaignStatusPill) campaignStatusPill.textContent = statusLabel;
-  if(goLiveBtn) goLiveBtn.href = `#live=${c.id}`;
-
-  renderRewardTable(leaderboardBody, c);
-}
-
-/* =========================
-   LIVE（リアルタイム）
-========================= */
-const liveTitle = document.getElementById("liveTitle");
-const liveMeta = document.getElementById("liveMeta");
-const goConfirmBtn = document.getElementById("goConfirmBtn");
-const liveLeaderboardBody = document.getElementById("liveLeaderboardBody");
-const rewardListBox = document.getElementById("rewardListBox");
-const liveGachaCard = document.getElementById("liveGachaCard");
-const liveInputCard = document.getElementById("liveInputCard");
-
-const listenerSelect = document.getElementById("listenerSelect");
-const listenerNewName = document.getElementById("listenerNewName");
-const gachaUserSelect = document.getElementById("gachaUserSelect");
-
-const customPointsInput = document.getElementById("customPoints");
-const liveMsg = document.getElementById("liveMsg");
-function setLiveMsg(msg){ if(liveMsg) liveMsg.textContent = msg || ""; }
-
-function renderListenerSelects(campaignId){
-  const pool = getListenerPool(campaignId);
-  const fromLogs = computeTotalsForCampaign(campaignId).map(x=>x.listener_name);
-  const set = new Set([...pool, ...fromLogs].filter(Boolean));
-  const names = Array.from(set).sort((a,b)=>a.localeCompare(b));
-
-  const optionsHtml =
-    `<option value="">（選択）</option>` +
-    names.map(n=>`<option value="${escapeHtml(n)}">${escapeHtml(n)}</option>`).join("");
-
-  if(listenerSelect){
-    const current = listenerSelect.value;
-    listenerSelect.innerHTML = optionsHtml;
-    if(current && names.includes(current)) listenerSelect.value = current;
-  }
-  if(gachaUserSelect){
-    const current = gachaUserSelect.value;
-    gachaUserSelect.innerHTML = optionsHtml;
-    if(current && names.includes(current)) gachaUserSelect.value = current;
-  }
-}
-
-function commitNewName(){
-  const c = getCurrentCampaign();
-  if(!c) return "";
-  const name = (listenerNewName?.value || "").trim();
-  if(!name) return "";
-  addListenerToPool(c.id, name);
-  renderListenerSelects(c.id);
-  if(listenerSelect) listenerSelect.value = name;
-  if(gachaUserSelect && !gachaUserSelect.value) gachaUserSelect.value = name;
-  listenerNewName.value = "";
-  return name;
-}
-listenerNewName?.addEventListener("blur", ()=>{ commitNewName(); });
-listenerNewName?.addEventListener("keydown", (e)=>{
-  if(e.key === "Enter"){
-    e.preventDefault();
-    commitNewName();
-  }
-});
-
-function getActiveListenerName(){
-  const c = getCurrentCampaign();
-  if(!c) return "";
-  const fromNew = (listenerNewName?.value || "").trim();
-  if(fromNew){
-    addListenerToPool(c.id, fromNew);
-    renderListenerSelects(c.id);
-    if(listenerSelect) listenerSelect.value = fromNew;
-    listenerNewName.value = "";
-    return fromNew;
-  }
-  return (listenerSelect?.value || "").trim();
-}
-
-function addLog(delta){
-  const c = getCurrentCampaign();
-  if(!c) return;
-
-  const name = getActiveListenerName();
-  if(!name) return toast("名前");
-
-  addListenerToPool(c.id, name);
-  renderListenerSelects(c.id);
-
-  state.logs.push({
-    id: uid(),
-    campaign_id: c.id,
-    listener_name: name,
-    delta_points: delta,
-    created_at: new Date().toISOString(),
-  });
-
-  saveState();
-  renderAll();
-  setLiveMsg(`${delta>0?"+":""}${delta} / ${name}`);
-  toast("反映");
-}
-
-function undoLastLog(){
-  const c = getCurrentCampaign();
-  if(!c) return;
-  for(let i=state.logs.length-1;i>=0;i--){
-    if(state.logs[i].campaign_id===c.id){
-      state.logs.splice(i,1);
-      saveState();
-      renderAll();
-      toast("戻す");
-      return;
-    }
-  }
-}
-
-document.querySelectorAll("[data-add]").forEach(btn=>{
-  btn.addEventListener("click", ()=> addLog(parseInt(btn.getAttribute("data-add"),10)));
-});
-document.getElementById("addCustomBtn")?.addEventListener("click", ()=>{
-  const v = parseInt(customPointsInput.value,10);
-  if(!v) return;
-  addLog(v);
-  customPointsInput.value = "";
-});
-document.getElementById("subtractBtn")?.addEventListener("click", ()=>{
-  const v = parseInt(customPointsInput.value,10);
-  if(!v) return;
-  addLog(-Math.abs(v));
-  customPointsInput.value = "";
-});
-document.getElementById("undoBtn")?.addEventListener("click", ()=> undoLastLog());
-
-/* 返礼品一覧 */
-function renderRewardList(c){
-  if(!rewardListBox) return;
-
-  const type = normalizeCampaignType(c.type);
-
-  if(type === "gacha"){
-    ensureGacha(c);
-    const items = c.gacha.items || [];
-    rewardListBox.innerHTML = items.length
-      ? items.map(it => `<div class="rewardChip">${escapeHtml(it.name)}（${escapeHtml(it.rate)}%）</div>`).join("")
-      : `<div class="muted">返礼品なし</div>`;
-    return;
-  }
-
-  const rules = rulesSorted(c.rules);
-  rewardListBox.innerHTML = rules.length
-    ? rules.map(r=>{
-        const label = (type==="achievement")
-          ? `${r.threshold}pt達成：${escapeHtml(r.reward)}`
-          : `${r.threshold}：${escapeHtml(r.reward)}`;
-        return `<div class="rewardChip">${label}</div>`;
-      }).join("")
-    : `<div class="muted">返礼品なし</div>`;
-}
-
-/* ガチャ */
-const gachaPtInput = document.getElementById("gachaPtInput");
-const gachaRollBtn = document.getElementById("gachaRollBtn");
-const gachaResultBox = document.getElementById("gachaResultBox");
-const gachaCopyBtn = document.getElementById("gachaCopyBtn");
-
-function calcGachaPulls(pt, g){
-  const singleCost = Math.max(0, Number(g.singleCost||0));
-  const multiCost = Math.max(0, Number(g.multiCost||0));
-  const multiCount = Math.max(0, Number(g.multiCount||0));
-  if(pt <= 0 || singleCost <= 0) return { total:0 };
-
-  let remain = pt;
-  let multiTimes = 0;
-  if(multiCost > 0 && multiCount > 0){
-    multiTimes = Math.floor(remain / multiCost);
-    remain -= multiTimes * multiCost;
-  }
-  const singleTimes = Math.floor(remain / singleCost);
-  const total = multiTimes * (multiCount||0) + singleTimes;
-  return { total };
-}
-
-function pickGachaItem(items){
-  const cleaned = items
-    .filter(x => x && x.name && Number.isFinite(Number(x.rate)) && Number(x.rate) > 0)
-    .map(x => ({ name: x.name, rate: Number(x.rate) }));
-
-  if(cleaned.length===0) return null;
-
-  const sum = cleaned.reduce((s,x)=>s+x.rate,0);
-  const r = Math.random() * sum;
-  let acc = 0;
-  for(const it of cleaned){
-    acc += it.rate;
-    if(r <= acc) return it.name;
-  }
-  return cleaned[cleaned.length-1].name;
-}
-
-function rollGacha(user, pt){
-  const c = getCurrentCampaign();
-  if(!c) return;
-  ensureGacha(c);
-
-  const calc = calcGachaPulls(pt, c.gacha);
-  if(calc.total <= 0){
-    if(gachaResultBox) gachaResultBox.value = "";
-    return toast("回せない");
-  }
-
-  addListenerToPool(c.id, user);
-  renderListenerSelects(c.id);
-
-  const results = [];
-  for(let i=0;i<calc.total;i++){
-    results.push(pickGachaItem(c.gacha.items || []) ?? "（景品未設定）");
-  }
-
-  // 使用ptはログに加算として入れる（投げたptとして扱う）
-  state.logs.push({
-    id: uid(),
-    campaign_id: c.id,
-    listener_name: user,
-    delta_points: pt,
-    created_at: new Date().toISOString(),
-  });
-
-  addGachaResult(c.id, user, pt, results);
-
-  // 番号なし、被りは×n、使用pt表記なし
-  const count = new Map();
-  for(const r of results) count.set(r, (count.get(r) || 0) + 1);
-  const lines = Array.from(count.entries())
-    .sort((a,b)=> b[1]-a[1] || a[0].localeCompare(b[0]))
-    .map(([name, n]) => (n === 1 ? `${name}` : `${name} ×${n}`))
-    .join("\n");
-
-  if(gachaResultBox){
-    gachaResultBox.value = `回した人：${user}\n回数：${calc.total}\n\n` + lines;
-  }
-
-  saveState();
-  toast("結果");
-  renderAll();
-}
-
-gachaRollBtn?.addEventListener("click", ()=>{
-  const c = getCurrentCampaign();
-  if(!c) return;
-
-  let user = (gachaUserSelect?.value || "").trim();
-  if(!user) user = commitNewName();
-
-  const pt = Number(gachaPtInput?.value || 0);
-  if(!user) return toast("名前");
-  if(!Number.isFinite(pt) || pt<=0) return toast("pt");
-
-  rollGacha(user, pt);
-});
-
-gachaCopyBtn?.addEventListener("click", async ()=>{
-  const text = (gachaResultBox?.value||"").toString();
-  if(!text.trim()) return toast("空");
-  try{
-    await navigator.clipboard.writeText(text);
-    toast("コピー");
-  }catch{
-    try{
-      gachaResultBox.focus();
-      gachaResultBox.select();
-      document.execCommand("copy");
-      toast("コピー");
-    }catch{
-      alert("コピーに失敗しました。");
-    }
-  }
-});
-
-function renderGachaVisibility(c){
-  const isGacha = normalizeCampaignType(c.type) === "gacha";
-  liveGachaCard?.classList.toggle("hidden", !isGacha);
-  liveInputCard?.classList.toggle("hidden", isGacha);
-}
-
-/* LIVE描画 */
-function renderLive(){
-  const c = getCurrentCampaign();
-  if(!c){ location.hash="#tasks"; return; }
-
-  const done = isCampaignDone(c);
-  const statusLabel = done ? "完了" : "未完了";
-
-  if(liveTitle) liveTitle.textContent = c.name;
-  if(liveMeta) liveMeta.textContent = `${c.start_date} / ${statusLabel}`;
-  if(goConfirmBtn) goConfirmBtn.href = `#campaign=${c.id}`;
-
-  renderGachaVisibility(c);
-  renderRewardList(c);
-  renderRewardTable(liveLeaderboardBody, c);
-  renderListenerSelects(c.id);
-
-  setLiveMsg("");
-}
-
-/* =========================
-   バックアップ / 復元
-========================= */
-document.getElementById("exportBtn")?.addEventListener("click", ()=>{
-  const blob = new Blob([JSON.stringify(state,null,2)], {type:"application/json"});
-  const a = document.createElement("a");
-  a.href = URL.createObjectURL(blob);
-  a.download = `reward-task-backup-${new Date().toISOString().slice(0,10)}.json`;
-  a.click();
-  URL.revokeObjectURL(a.href);
-  toast("バックアップ");
-});
-
-document.getElementById("importFile")?.addEventListener("change", async (e)=>{
-  const file = e.target.files?.[0];
-  if(!file) return;
-  const text = await file.text();
-  try{
-    const obj = JSON.parse(text);
-    state = {
-      campaigns: Array.isArray(obj.campaigns) ? obj.campaigns : [],
-      logs: Array.isArray(obj.logs) ? obj.logs : [],
-      delivery: (obj.delivery && typeof obj.delivery === "object") ? obj.delivery : {},
-      purchases: (obj.purchases && typeof obj.purchases === "object") ? obj.purchases : {},
-      gacha_history: (obj.gacha_history && typeof obj.gacha_history === "object") ? obj.gacha_history : {},
-      listener_pool: (obj.listener_pool && typeof obj.listener_pool === "object") ? obj.listener_pool : {},
-    };
-    migrate();
-    saveState();
-    toast("復元");
-    route();
-    renderAll();
-  }catch{
-    alert("復元に失敗：JSONが不正です。");
-  }finally{
-    e.target.value = "";
-  }
-});
-
-/* =========================
-   まとめ描画
-========================= */
-function renderAll(){
-  renderHome();
-  renderCampaigns();
-
-  const h = location.hash || "";
-  if(h.startsWith("#tasks")) renderTaskCampaignList();
-  if(h.startsWith("#campaign=")) renderCampaign();
-  if(h.startsWith("#live=")) renderLive();
-}
-
-/* init */
-if(createTypeSelect){
-  setCreateTypeUI(createTypeSelect.value);
-}
-route();
-renderAll();
