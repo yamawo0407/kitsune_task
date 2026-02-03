@@ -670,6 +670,69 @@ function renderRewardTableLiveReadOnly(tbodyEl, campaign){
     return;
   }
 
+  // ✅各行に data-listener を付けてタップ可能に
+  tbodyEl.innerHTML = totals.map(r=>{
+    return `
+      <tr class="tapRow" data-listener="${escapeHtml(r.listener_name)}">
+        <td>${escapeHtml(r.listener_name)}</td>
+        <td class="right">${r.points}</td>
+        <td class="center">${renderRewardCell(campaign, r.listener_name, r.points)}</td>
+      </tr>
+    `;
+  }).join("");
+
+  // ✅行タップ → ライブ入力の対象リスナーを自動切り替え
+  tbodyEl.querySelectorAll("tr[data-listener]").forEach(tr=>{
+    tr.addEventListener("click", ()=>{
+      const name = (tr.getAttribute("data-listener") || "").trim();
+      if(!name) return;
+
+      // まだ候補に無い場合もあるので追加
+      addListenerToPool(campaign.id, name);
+      renderListenerSelects(campaign.id);
+
+      // ガチャ企画なら「回した人」側に反映、通常企画ならライブ入力側に反映
+      const isGacha = normalizeCampaignType(campaign.type) === "gacha";
+      if(isGacha){
+        if(gachaUserSelect) gachaUserSelect.value = name;
+      }else{
+        if(listenerSelect) listenerSelect.value = name;
+        // 任意：ライブ入力カードへスクロール
+        if(liveInputCard) liveInputCard.scrollIntoView({ behavior: "smooth", block: "start" });
+      }
+
+      toast(`${name}`);
+    });
+  });
+
+  // ✅ shopping の購入ボタン（返礼品セル内）を押した時に行タップが発火しないようにする
+  tbodyEl.querySelectorAll("[data-buy], [data-undo-buy]").forEach(btn=>{
+    btn.addEventListener("click", (e)=> e.stopPropagation());
+  });
+
+  // ※shoppingの購入は残す（仕様）
+  tbodyEl.querySelectorAll("[data-buy]").forEach(btn=>{
+    btn.addEventListener("click", ()=>{
+      const name = btn.getAttribute("data-buy");
+      const cost = parseInt(btn.getAttribute("data-cost"),10);
+      const reward = btn.getAttribute("data-reward");
+      addPurchase(campaign, name, cost, reward);
+      toast("購入");
+      renderAll();
+    });
+  });
+
+  tbodyEl.querySelectorAll("[data-undo-buy]").forEach(btn=>{
+    btn.addEventListener("click", ()=>{
+      const name = btn.getAttribute("data-undo-buy");
+      const ok = undoPurchase(campaign, name);
+      toast(ok ? "取り消し" : "なし");
+      renderAll();
+    });
+  });
+}
+
+
   tbodyEl.innerHTML = totals.map(r=>{
     return `
       <tr>
