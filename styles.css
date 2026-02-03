@@ -334,3 +334,6 @@ body{
   color: var(--muted);
   box-shadow: var(--shadow);
 }
+/* リアルタイム編集：返礼品状況の行をタップ可能に */
+.tapRow { cursor: pointer; }
+.tapRow:hover { filter: brightness(1.01); }
