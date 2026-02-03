@@ -53,6 +53,7 @@
           <div class="card-title">状況</div>
           <div class="pill" id="overallPill">—</div>
         </div>
+
         <div class="stats">
           <a class="stat statLink" href="#tasks?list=all">
             <div class="stat-num" id="statCampaigns">0</div>
@@ -244,7 +245,7 @@
       <div class="grid2">
         <label class="field">
           <span>回した人</span>
-          <select id="gachaUserSelect" class="input"></select>
+          <input id="gachaUserInput" class="input" placeholder="名前（入力→登録→タップでも切替可）" />
         </label>
         <label class="field">
           <span>使用pt</span>
@@ -270,10 +271,9 @@
     <section class="grid2 top">
       <section class="card">
         <div class="card-head">
-          <div class="card-title">返礼品状況</div>
+          <div class="card-title">返礼品状況（タップで入力対象を切替）</div>
         </div>
 
-        <!-- ✅リアルタイムは“見るだけ”。編集/削除ボタンは出ない -->
         <table class="table">
           <thead>
             <tr>
@@ -293,14 +293,14 @@
         </div>
 
         <div class="stack">
-          <label class="field">
-            <span>リスナー</span>
-            <select id="listenerSelect" class="input"></select>
-          </label>
+          <div class="row gap wrapBtns">
+            <div class="pill">現在のリスナー：<strong id="activeListenerLabel">未選択</strong></div>
+            <button id="clearActiveBtn" class="btn ghost small" type="button">解除</button>
+          </div>
 
           <label class="field">
-            <span>新しい名前</span>
-            <input id="listenerNewName" class="input" placeholder="表示名（入力→自動追加→空になる）" />
+            <span>名前を追加</span>
+            <input id="listenerNameInput" class="input" placeholder="名前（入力→自動登録＆選択）" />
           </label>
 
           <div class="row wrapBtns">
