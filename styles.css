@@ -286,16 +286,6 @@ body{
   padding: 6px 8px;
   font-size: 12px;
 }
-.shopBuyList{ display:flex; flex-wrap:wrap; gap: 6px; }
-.shopBuyBtn{
-  padding: 6px 8px;
-  border-radius: 12px;
-  border: 1px solid var(--line);
-  background: #fff;
-  cursor:pointer;
-  font-size: 12px;
-}
-.shopBuyBtn:disabled{ opacity:.45; cursor:not-allowed; }
 
 .textarea{
   width: 100%;
@@ -334,6 +324,12 @@ body{
   color: var(--muted);
   box-shadow: var(--shadow);
 }
-/* リアルタイム編集：返礼品状況の行をタップ可能に */
-.tapRow { cursor: pointer; }
-.tapRow:hover { filter: brightness(1.01); }
+
+/* ✅リスナー行タップ */
+.tapRow{ cursor:pointer; }
+.tapRow:hover{ filter: brightness(1.01); }
+.tapRow.active{
+  outline: 2px solid rgba(70,192,139,.35);
+  outline-offset: -2px;
+  background: rgba(231,251,242,.65);
+}
