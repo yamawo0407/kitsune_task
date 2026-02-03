@@ -1,12 +1,12 @@
 "use strict";
 
 /* =========================
-   基本
+   Utils
 ========================= */
 const jsStatus = document.getElementById("jsStatus");
 if (jsStatus) jsStatus.textContent = "JS: OK";
 
-const STORAGE_KEY = "reward_task_manager_v17";
+const STORAGE_KEY = "reward_task_manager_v18";
 
 function uid(){ return Math.random().toString(16).slice(2) + Date.now().toString(16); }
 function escapeHtml(s){
@@ -26,7 +26,7 @@ function toast(msg){
 }
 
 /* =========================
-   state
+   State
 ========================= */
 function loadState(){
   try{
@@ -39,9 +39,10 @@ function loadState(){
       purchases: (s.purchases && typeof s.purchases === "object") ? s.purchases : {},
       gacha_history: (s.gacha_history && typeof s.gacha_history === "object") ? s.gacha_history : {},
       listener_pool: (s.listener_pool && typeof s.listener_pool === "object") ? s.listener_pool : {},
+      active_listener: (s.active_listener && typeof s.active_listener === "object") ? s.active_listener : {}, // {campaignId: "name"}
     };
   }catch{
-    return { campaigns: [], logs: [], delivery: {}, purchases: {}, gacha_history: {}, listener_pool: {} };
+    return { campaigns: [], logs: [], delivery: {}, purchases: {}, gacha_history: {}, listener_pool: {}, active_listener:{} };
   }
 }
 let state = loadState();
@@ -69,6 +70,7 @@ function migrate(){
   if(!state.purchases || typeof state.purchases !== "object") state.purchases = {};
   if(!state.gacha_history || typeof state.gacha_history !== "object") state.gacha_history = {};
   if(!state.listener_pool || typeof state.listener_pool !== "object") state.listener_pool = {};
+  if(!state.active_listener || typeof state.active_listener !== "object") state.active_listener = {};
 }
 migrate(); saveState();
 
@@ -155,7 +157,7 @@ function route(){
 window.addEventListener("hashchange", ()=>{ route(); renderAll(); });
 
 /* =========================
-   計算
+   Calculations
 ========================= */
 function rulesSorted(rules){
   return (Array.isArray(rules) ? rules : [])
@@ -207,7 +209,7 @@ function campaignSortDesc(a,b){
 }
 
 /* =========================
-   listener pool（select候補）
+   Listener pool + Active listener
 ========================= */
 function getListenerPool(campaignId){
   if(!state.listener_pool[campaignId] || !Array.isArray(state.listener_pool[campaignId])){
@@ -222,12 +224,25 @@ function addListenerToPool(campaignId, name){
   if(!pool.includes(n)){
     pool.push(n);
     pool.sort((a,b)=>a.localeCompare(b));
-    saveState();
   }
 }
 
+function setActiveListener(campaignId, name){
+  const n = (name||"").trim();
+  if(!n){
+    delete state.active_listener[campaignId];
+  }else{
+    addListenerToPool(campaignId, n);
+    state.active_listener[campaignId] = n;
+  }
+  saveState();
+}
+function getActiveListener(campaignId){
+  return (state.active_listener[campaignId] || "").trim();
+}
+
 /* =========================
-   お買い物方式（購入履歴）
+   Purchases (shopping)
 ========================= */
 function getPurchaseMap(campaignId){
   if(!state.purchases[campaignId] || typeof state.purchases[campaignId] !== "object") state.purchases[campaignId] = {};
@@ -250,7 +265,7 @@ function undoPurchase(campaign, listenerName){
 }
 
 /* =========================
-   ガチャ履歴
+   Gacha history
 ========================= */
 function getGachaCampaignMap(campaignId){
   if(!state.gacha_history[campaignId] || typeof state.gacha_history[campaignId] !== "object"){
@@ -302,7 +317,7 @@ function renderHome(){
 }
 
 /* =========================
-   企画作成 UI
+   Campaign create UI
 ========================= */
 function addRuleRow(container, threshold="", reward=""){
   const el = document.createElement("div");
@@ -364,7 +379,7 @@ function collectGachaItemsFrom(container){
   return items;
 }
 
-/* 企画作成 DOM */
+/* Campaign create DOM */
 const campaignListEl = document.getElementById("campaignList");
 const campaignSearchEl = document.getElementById("campaignSearch");
 const createCampaignForm = document.getElementById("createCampaignForm");
@@ -435,7 +450,6 @@ createCampaignForm?.addEventListener("submit",(e)=>{
   renderAll();
   toast("作成");
 });
-
 campaignSearchEl?.addEventListener("input", renderCampaigns);
 
 function deleteCampaign(campaignId){
@@ -445,6 +459,8 @@ function deleteCampaign(campaignId){
   delete state.purchases[campaignId];
   delete state.gacha_history[campaignId];
   delete state.listener_pool[campaignId];
+  delete state.active_listener[campaignId];
+  saveState();
 }
 
 function renderCampaigns(){
@@ -494,7 +510,6 @@ function renderCampaigns(){
       if(!c) return;
       if(!confirm(`「${c.name}」を削除します。OK？`)) return;
       deleteCampaign(id);
-      saveState();
       renderAll();
       toast("削除");
     });
@@ -502,7 +517,7 @@ function renderCampaigns(){
 }
 
 /* =========================
-   タスク管理
+   Tasks
 ========================= */
 const taskCampaignListEl = document.getElementById("taskCampaignList");
 document.getElementById("filterAllCampaigns")?.addEventListener("click", ()=>{ taskPageFilter="all"; renderTaskCampaignList(); });
@@ -514,7 +529,6 @@ function filterCampaignsByListMode(list, campaigns){
   if(list==="done") return campaigns.filter(c=>isCampaignDone(c));
   return campaigns;
 }
-
 function renderTaskCampaignList(){
   if(!taskCampaignListEl) return;
 
@@ -549,7 +563,7 @@ function renderTaskCampaignList(){
 }
 
 /* =========================
-   返礼品セル
+   Reward cell
 ========================= */
 function renderRewardCell(campaign, listenerName, points){
   const type = normalizeCampaignType(campaign.type);
@@ -566,8 +580,11 @@ function renderRewardCell(campaign, listenerName, points){
     return `<div class="shopItems">${list.map(x=>`<span class="shopItemChip">${escapeHtml(`${x.cost}pt達成：${x.reward}`)}</span>`).join("")}</div>`;
   }
 
-  // shopping
+  // shopping: 表示だけ（購入ボタン等は今回省略）
   const rules = rulesSorted(campaign.rules).map(r=>({cost:r.threshold, reward:r.reward}));
+  if(!rules.length) return `<div class="muted">—</div>`;
+
+  // 残pt計算（購入管理を使うならここを拡張）
   const purchases = getPurchases(campaign.id, listenerName);
   const spent = purchases.reduce((s,x)=> s + (x.cost||0), 0);
   const remaining = points - spent;
@@ -576,33 +593,25 @@ function renderRewardCell(campaign, listenerName, points){
     ? `<div class="shopItems">${purchases.map(x=>`<span class="shopItemChip">${escapeHtml(`${x.cost}：${x.reward}`)}</span>`).join("")}</div>`
     : `<div class="muted">—</div>`;
 
-  const buyButtons = rules.length
-    ? `<div class="shopBuyList">${rules.map(x=>{
-        const disabled = remaining < x.cost;
-        return `<button class="shopBuyBtn" type="button" data-buy="${escapeHtml(listenerName)}" data-cost="${x.cost}" data-reward="${escapeHtml(x.reward)}" ${disabled?"disabled":""}>${escapeHtml(`${x.cost}：${x.reward}`)}</button>`;
-      }).join("")}</div>`
-    : `<div class="muted">—</div>`;
-
   return `
     <div class="shopBox">
       <div class="shopRemaining">残pt：${remaining}</div>
       ${purchasedChips}
-      ${buyButtons}
-      <div class="row gap wrapBtns" style="margin-top:6px;">
-        <button class="btn ghost micro" type="button" data-undo-buy="${escapeHtml(listenerName)}">取り消し</button>
-      </div>
     </div>
   `;
 }
 
 /* =========================
-   表：確認（状況編集あり）
+   Campaign (confirm)
 ========================= */
+const campaignTitleEl = document.getElementById("campaignTitle");
+const campaignMetaEl = document.getElementById("campaignMeta");
+const campaignStatusPill = document.getElementById("campaignStatusPill");
+const goLiveBtn = document.getElementById("goLiveBtn");
 const leaderboardBody = document.getElementById("leaderboardBody");
 
 function renderRewardTableConfirm(tbodyEl, campaign){
   if(!tbodyEl) return;
-
   const totals = computeTotalsForCampaign(campaign.id);
   if(!totals.length){
     tbodyEl.innerHTML = `<tr><td colspan="4" class="muted">データなし</td></tr>`;
@@ -634,143 +643,7 @@ function renderRewardTableConfirm(tbodyEl, campaign){
       renderAll();
     });
   });
-
-  tbodyEl.querySelectorAll("[data-buy]").forEach(btn=>{
-    btn.addEventListener("click", ()=>{
-      const name = btn.getAttribute("data-buy");
-      const cost = parseInt(btn.getAttribute("data-cost"),10);
-      const reward = btn.getAttribute("data-reward");
-      addPurchase(campaign, name, cost, reward);
-      toast("購入");
-      renderAll();
-    });
-  });
-  tbodyEl.querySelectorAll("[data-undo-buy]").forEach(btn=>{
-    btn.addEventListener("click", ()=>{
-      const name = btn.getAttribute("data-undo-buy");
-      const ok = undoPurchase(campaign, name);
-      toast(ok ? "取り消し" : "なし");
-      renderAll();
-    });
-  });
 }
-
-/* =========================
-   表：リアルタイム（見るだけ）
-   ✅編集/削除ボタンは出ない
-========================= */
-const liveLeaderboardBody = document.getElementById("liveLeaderboardBody");
-
-function renderRewardTableLiveReadOnly(tbodyEl, campaign){
-  if(!tbodyEl) return;
-
-  const totals = computeTotalsForCampaign(campaign.id);
-  if(!totals.length){
-    tbodyEl.innerHTML = `<tr><td colspan="3" class="muted">データなし</td></tr>`;
-    return;
-  }
-
-  // ✅各行に data-listener を付けてタップ可能に
-  tbodyEl.innerHTML = totals.map(r=>{
-    return `
-      <tr class="tapRow" data-listener="${escapeHtml(r.listener_name)}">
-        <td>${escapeHtml(r.listener_name)}</td>
-        <td class="right">${r.points}</td>
-        <td class="center">${renderRewardCell(campaign, r.listener_name, r.points)}</td>
-      </tr>
-    `;
-  }).join("");
-
-  // ✅行タップ → ライブ入力の対象リスナーを自動切り替え
-  tbodyEl.querySelectorAll("tr[data-listener]").forEach(tr=>{
-    tr.addEventListener("click", ()=>{
-      const name = (tr.getAttribute("data-listener") || "").trim();
-      if(!name) return;
-
-      // まだ候補に無い場合もあるので追加
-      addListenerToPool(campaign.id, name);
-      renderListenerSelects(campaign.id);
-
-      // ガチャ企画なら「回した人」側に反映、通常企画ならライブ入力側に反映
-      const isGacha = normalizeCampaignType(campaign.type) === "gacha";
-      if(isGacha){
-        if(gachaUserSelect) gachaUserSelect.value = name;
-      }else{
-        if(listenerSelect) listenerSelect.value = name;
-        // 任意：ライブ入力カードへスクロール
-        if(liveInputCard) liveInputCard.scrollIntoView({ behavior: "smooth", block: "start" });
-      }
-
-      toast(`${name}`);
-    });
-  });
-
-  // ✅ shopping の購入ボタン（返礼品セル内）を押した時に行タップが発火しないようにする
-  tbodyEl.querySelectorAll("[data-buy], [data-undo-buy]").forEach(btn=>{
-    btn.addEventListener("click", (e)=> e.stopPropagation());
-  });
-
-  // ※shoppingの購入は残す（仕様）
-  tbodyEl.querySelectorAll("[data-buy]").forEach(btn=>{
-    btn.addEventListener("click", ()=>{
-      const name = btn.getAttribute("data-buy");
-      const cost = parseInt(btn.getAttribute("data-cost"),10);
-      const reward = btn.getAttribute("data-reward");
-      addPurchase(campaign, name, cost, reward);
-      toast("購入");
-      renderAll();
-    });
-  });
-
-  tbodyEl.querySelectorAll("[data-undo-buy]").forEach(btn=>{
-    btn.addEventListener("click", ()=>{
-      const name = btn.getAttribute("data-undo-buy");
-      const ok = undoPurchase(campaign, name);
-      toast(ok ? "取り消し" : "なし");
-      renderAll();
-    });
-  });
-}
-
-
-  tbodyEl.innerHTML = totals.map(r=>{
-    return `
-      <tr>
-        <td>${escapeHtml(r.listener_name)}</td>
-        <td class="right">${r.points}</td>
-        <td class="center">${renderRewardCell(campaign, r.listener_name, r.points)}</td>
-      </tr>
-    `;
-  }).join("");
-
-  // ※shoppingの購入ボタンは「返礼品状況の編集/削除」ではないので残す
-  tbodyEl.querySelectorAll("[data-buy]").forEach(btn=>{
-    btn.addEventListener("click", ()=>{
-      const name = btn.getAttribute("data-buy");
-      const cost = parseInt(btn.getAttribute("data-cost"),10);
-      const reward = btn.getAttribute("data-reward");
-      addPurchase(campaign, name, cost, reward);
-      toast("購入");
-      renderAll();
-    });
-  });
-  tbodyEl.querySelectorAll("[data-undo-buy]").forEach(btn=>{
-    btn.addEventListener("click", ()=>{
-      const name = btn.getAttribute("data-undo-buy");
-      const ok = undoPurchase(campaign, name);
-      toast(ok ? "取り消し" : "なし");
-      renderAll();
-    });
-  });
-}
-
-/* =========================
-   返礼品状況一覧（campaign）
-========================= */
-const campaignTitleEl = document.getElementById("campaignTitle");
-const campaignMetaEl = document.getElementById("campaignMeta");
-const campaignStatusPill = document.getElementById("campaignStatusPill");
-const goLiveBtn = document.getElementById("goLiveBtn");
 
 function renderCampaign(){
   const c = getCurrentCampaign();
@@ -788,99 +661,108 @@ function renderCampaign(){
 }
 
 /* =========================
-   LIVE（リアルタイム）
+   LIVE
 ========================= */
 const liveTitle = document.getElementById("liveTitle");
 const liveMeta = document.getElementById("liveMeta");
 const goConfirmBtn = document.getElementById("goConfirmBtn");
+const liveLeaderboardBody = document.getElementById("liveLeaderboardBody");
 const rewardListBox = document.getElementById("rewardListBox");
 const liveGachaCard = document.getElementById("liveGachaCard");
 const liveInputCard = document.getElementById("liveInputCard");
 
-const listenerSelect = document.getElementById("listenerSelect");
-const listenerNewName = document.getElementById("listenerNewName");
-const gachaUserSelect = document.getElementById("gachaUserSelect");
+const activeListenerLabel = document.getElementById("activeListenerLabel");
+const clearActiveBtn = document.getElementById("clearActiveBtn");
+const listenerNameInput = document.getElementById("listenerNameInput");
 
 const customPointsInput = document.getElementById("customPoints");
 const liveMsg = document.getElementById("liveMsg");
 function setLiveMsg(msg){ if(liveMsg) liveMsg.textContent = msg || ""; }
 
-function renderListenerSelects(campaignId){
-  const pool = getListenerPool(campaignId);
-  const fromLogs = computeTotalsForCampaign(campaignId).map(x=>x.listener_name);
-  const set = new Set([...pool, ...fromLogs].filter(Boolean));
-  const names = Array.from(set).sort((a,b)=>a.localeCompare(b));
+const gachaUserInput = document.getElementById("gachaUserInput");
+const gachaPtInput = document.getElementById("gachaPtInput");
+const gachaRollBtn = document.getElementById("gachaRollBtn");
+const gachaResultBox = document.getElementById("gachaResultBox");
+const gachaCopyBtn = document.getElementById("gachaCopyBtn");
 
-  const optionsHtml =
-    `<option value="">（選択）</option>` +
-    names.map(n=>`<option value="${escapeHtml(n)}">${escapeHtml(n)}</option>`).join("");
+function renderRewardList(c){
+  if(!rewardListBox) return;
+  const type = normalizeCampaignType(c.type);
 
-  if(listenerSelect){
-    const current = listenerSelect.value;
-    listenerSelect.innerHTML = optionsHtml;
-    if(current && names.includes(current)) listenerSelect.value = current;
+  if(type === "gacha"){
+    ensureGacha(c);
+    const items = c.gacha.items || [];
+    rewardListBox.innerHTML = items.length
+      ? items.map(it => `<div class="rewardChip">${escapeHtml(it.name)}（${escapeHtml(it.rate)}%）</div>`).join("")
+      : `<div class="muted">返礼品なし</div>`;
+    return;
   }
-  if(gachaUserSelect){
-    const current = gachaUserSelect.value;
-    gachaUserSelect.innerHTML = optionsHtml;
-    if(current && names.includes(current)) gachaUserSelect.value = current;
-  }
+
+  const rules = rulesSorted(c.rules);
+  rewardListBox.innerHTML = rules.length
+    ? rules.map(r=>{
+        const label = (type==="achievement")
+          ? `${r.threshold}pt達成：${escapeHtml(r.reward)}`
+          : `${r.threshold}：${escapeHtml(r.reward)}`;
+        return `<div class="rewardChip">${label}</div>`;
+      }).join("")
+    : `<div class="muted">返礼品なし</div>`;
 }
 
-/* ✅重要：ポイント加算の対象は“常にプルダウンの選択” */
-function getActiveListenerName(){
-  return (listenerSelect?.value || "").trim();
+function renderActiveLabel(campaignId){
+  const name = getActiveListener(campaignId);
+  if(activeListenerLabel) activeListenerLabel.textContent = name || "未選択";
 }
 
-/* ✅入力→自動追加→入力欄は空にする（これでプルダウンが邪魔されない） */
-let nameDebounceTimer = null;
-listenerNewName?.addEventListener("input", ()=>{
-  const c = getCurrentCampaign();
-  if(!c) return;
+function renderRewardTableLiveTapToSelect(tbodyEl, campaign){
+  if(!tbodyEl) return;
 
-  clearTimeout(nameDebounceTimer);
-  nameDebounceTimer = setTimeout(()=>{
-    const name = (listenerNewName.value || "").trim();
-    if(!name) return;
-
-    addListenerToPool(c.id, name);
-    renderListenerSelects(c.id);
-
-    if(listenerSelect) listenerSelect.value = name;
-
-    // ✅ここが修正点：入力欄を自動で空にする
-    listenerNewName.value = "";
-
-    toast("追加");
-  }, 400);
-});
-
-/* Enterでも確定＋入力欄クリア */
-listenerNewName?.addEventListener("keydown", (e)=>{
-  if(e.key === "Enter"){
-    e.preventDefault();
-    const c = getCurrentCampaign();
-    if(!c) return;
-
-    const name = (listenerNewName.value || "").trim();
-    if(!name) return;
-
-    addListenerToPool(c.id, name);
-    renderListenerSelects(c.id);
-    if(listenerSelect) listenerSelect.value = name;
-
-    listenerNewName.value = "";
-    toast("追加");
+  const totals = computeTotalsForCampaign(campaign.id);
+  if(!totals.length){
+    tbodyEl.innerHTML = `<tr><td colspan="3" class="muted">データなし</td></tr>`;
+    return;
   }
-});
 
-/* ログ追加/Undo */
+  const active = getActiveListener(campaign.id);
+
+  tbodyEl.innerHTML = totals.map(r=>{
+    const isActive = active && active === r.listener_name;
+    return `
+      <tr class="tapRow ${isActive ? "active" : ""}" data-listener="${escapeHtml(r.listener_name)}">
+        <td>${escapeHtml(r.listener_name)}</td>
+        <td class="right">${r.points}</td>
+        <td class="center">${renderRewardCell(campaign, r.listener_name, r.points)}</td>
+      </tr>
+    `;
+  }).join("");
+
+  // ✅行タップで active を切り替え
+  tbodyEl.querySelectorAll("tr[data-listener]").forEach(tr=>{
+    tr.addEventListener("click", ()=>{
+      const name = (tr.getAttribute("data-listener") || "").trim();
+      if(!name) return;
+
+      setActiveListener(campaign.id, name);
+      renderActiveLabel(campaign.id);
+
+      // 見た目のactive反映
+      tbodyEl.querySelectorAll("tr.tapRow").forEach(x=>x.classList.remove("active"));
+      tr.classList.add("active");
+
+      // 入力を促すために右側へ軽くスクロール（任意）
+      liveInputCard?.scrollIntoView({ behavior:"smooth", block:"start" });
+
+      toast(name);
+    });
+  });
+}
+
 function addLog(delta){
   const c = getCurrentCampaign();
   if(!c) return;
 
-  const name = getActiveListenerName();
-  if(!name) return toast("名前");
+  const name = getActiveListener(c.id);
+  if(!name) return toast("リスナー未選択");
 
   state.logs.push({
     id: uid(),
@@ -911,6 +793,49 @@ function undoLastLog(){
   }
 }
 
+/* ✅名前入力：1回入力したら登録＆選択（0.4秒停止で確定） */
+let nameDebounceTimer = null;
+listenerNameInput?.addEventListener("input", ()=>{
+  const c = getCurrentCampaign();
+  if(!c) return;
+
+  clearTimeout(nameDebounceTimer);
+  nameDebounceTimer = setTimeout(()=>{
+    const name = (listenerNameInput.value||"").trim();
+    if(!name) return;
+
+    setActiveListener(c.id, name);
+    listenerNameInput.value = "";
+    renderActiveLabel(c.id);
+    renderAll(); // テーブル側のactive表示を更新
+    toast("追加");
+  }, 400);
+});
+listenerNameInput?.addEventListener("keydown", (e)=>{
+  if(e.key === "Enter"){
+    e.preventDefault();
+    const c = getCurrentCampaign();
+    if(!c) return;
+    const name = (listenerNameInput.value||"").trim();
+    if(!name) return;
+    setActiveListener(c.id, name);
+    listenerNameInput.value = "";
+    renderActiveLabel(c.id);
+    renderAll();
+    toast("追加");
+  }
+});
+
+clearActiveBtn?.addEventListener("click", ()=>{
+  const c = getCurrentCampaign();
+  if(!c) return;
+  setActiveListener(c.id, "");
+  renderActiveLabel(c.id);
+  renderAll();
+  toast("解除");
+});
+
+/* buttons */
 document.querySelectorAll("[data-add]").forEach(btn=>{
   btn.addEventListener("click", ()=> addLog(parseInt(btn.getAttribute("data-add"),10)));
 });
@@ -928,38 +853,9 @@ document.getElementById("subtractBtn")?.addEventListener("click", ()=>{
 });
 document.getElementById("undoBtn")?.addEventListener("click", ()=> undoLastLog());
 
-/* 返礼品一覧 */
-function renderRewardList(c){
-  if(!rewardListBox) return;
-
-  const type = normalizeCampaignType(c.type);
-
-  if(type === "gacha"){
-    ensureGacha(c);
-    const items = c.gacha.items || [];
-    rewardListBox.innerHTML = items.length
-      ? items.map(it => `<div class="rewardChip">${escapeHtml(it.name)}（${escapeHtml(it.rate)}%）</div>`).join("")
-      : `<div class="muted">返礼品なし</div>`;
-    return;
-  }
-
-  const rules = rulesSorted(c.rules);
-  rewardListBox.innerHTML = rules.length
-    ? rules.map(r=>{
-        const label = (type==="achievement")
-          ? `${r.threshold}pt達成：${escapeHtml(r.reward)}`
-          : `${r.threshold}：${escapeHtml(r.reward)}`;
-        return `<div class="rewardChip">${label}</div>`;
-      }).join("")
-    : `<div class="muted">返礼品なし</div>`;
-}
-
-/* ガチャ */
-const gachaPtInput = document.getElementById("gachaPtInput");
-const gachaRollBtn = document.getElementById("gachaRollBtn");
-const gachaResultBox = document.getElementById("gachaResultBox");
-const gachaCopyBtn = document.getElementById("gachaCopyBtn");
-
+/* =========================
+   Gacha
+========================= */
 function calcGachaPulls(pt, g){
   const singleCost = Math.max(0, Number(g.singleCost||0));
   const multiCost = Math.max(0, Number(g.multiCost||0));
@@ -976,7 +872,6 @@ function calcGachaPulls(pt, g){
   const total = multiTimes * (multiCount||0) + singleTimes;
   return { total };
 }
-
 function pickGachaItem(items){
   const cleaned = items
     .filter(x => x && x.name && Number.isFinite(Number(x.rate)) && Number(x.rate) > 0)
@@ -993,7 +888,6 @@ function pickGachaItem(items){
   }
   return cleaned[cleaned.length-1].name;
 }
-
 function rollGacha(user, pt){
   const c = getCurrentCampaign();
   if(!c) return;
@@ -1005,8 +899,8 @@ function rollGacha(user, pt){
     return toast("回せない");
   }
 
-  addListenerToPool(c.id, user);
-  renderListenerSelects(c.id);
+  // userをpoolに追加 & activeにもする（ガチャ用）
+  setActiveListener(c.id, user);
 
   const results = [];
   for(let i=0;i<calc.total;i++){
@@ -1022,6 +916,7 @@ function rollGacha(user, pt){
   });
   addGachaResult(c.id, user, pt, results);
 
+  // 番号なし、被り×n、使用pt表記なし
   const count = new Map();
   for(const r of results) count.set(r, (count.get(r) || 0) + 1);
   const lines = Array.from(count.entries())
@@ -1037,19 +932,19 @@ function rollGacha(user, pt){
   toast("結果");
   renderAll();
 }
-
 gachaRollBtn?.addEventListener("click", ()=>{
   const c = getCurrentCampaign();
   if(!c) return;
 
-  const user = (gachaUserSelect?.value || "").trim();
+  const user = (gachaUserInput?.value || "").trim();
   const pt = Number(gachaPtInput?.value || 0);
   if(!user) return toast("名前");
   if(!Number.isFinite(pt) || pt<=0) return toast("pt");
 
+  // 入力欄は残しても良いが、ここは消す方が事故が減る
+  gachaUserInput.value = "";
   rollGacha(user, pt);
 });
-
 gachaCopyBtn?.addEventListener("click", async ()=>{
   const text = (gachaResultBox?.value||"").toString();
   if(!text.trim()) return toast("空");
@@ -1068,6 +963,9 @@ gachaCopyBtn?.addEventListener("click", async ()=>{
   }
 });
 
+/* =========================
+   LIVE render
+========================= */
 function renderGachaVisibility(c){
   const isGacha = normalizeCampaignType(c.type) === "gacha";
   liveGachaCard?.classList.toggle("hidden", !isGacha);
@@ -1087,14 +985,13 @@ function renderLive(){
 
   renderGachaVisibility(c);
   renderRewardList(c);
-  renderRewardTableLiveReadOnly(liveLeaderboardBody, c);
-
-  renderListenerSelects(c.id);
+  renderActiveLabel(c.id);
+  renderRewardTableLiveTapToSelect(liveLeaderboardBody, c);
   setLiveMsg("");
 }
 
 /* =========================
-   バックアップ / 復元
+   Backup / Restore
 ========================= */
 document.getElementById("exportBtn")?.addEventListener("click", ()=>{
   const blob = new Blob([JSON.stringify(state,null,2)], {type:"application/json"});
@@ -1105,7 +1002,6 @@ document.getElementById("exportBtn")?.addEventListener("click", ()=>{
   URL.revokeObjectURL(a.href);
   toast("バックアップ");
 });
-
 document.getElementById("importFile")?.addEventListener("change", async (e)=>{
   const file = e.target.files?.[0];
   if(!file) return;
@@ -1119,6 +1015,7 @@ document.getElementById("importFile")?.addEventListener("change", async (e)=>{
       purchases: (obj.purchases && typeof obj.purchases === "object") ? obj.purchases : {},
       gacha_history: (obj.gacha_history && typeof obj.gacha_history === "object") ? obj.gacha_history : {},
       listener_pool: (obj.listener_pool && typeof obj.listener_pool === "object") ? obj.listener_pool : {},
+      active_listener: (obj.active_listener && typeof obj.active_listener === "object") ? obj.active_listener : {},
     };
     migrate();
     saveState();
@@ -1133,7 +1030,7 @@ document.getElementById("importFile")?.addEventListener("change", async (e)=>{
 });
 
 /* =========================
-   まとめ描画
+   renderAll
 ========================= */
 function renderAll(){
   renderHome();
