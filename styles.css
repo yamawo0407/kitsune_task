@@ -277,8 +277,6 @@ body{
   color: var(--text);
 }
 
-.shopBox{ display:grid; gap: 8px; }
-.shopRemaining{ font-size: 12px; color: var(--muted); }
 .shopItems{ display:flex; flex-wrap:wrap; gap: 6px; justify-content:center; }
 .shopItemChip{
   border:1px solid var(--line);
@@ -313,6 +311,8 @@ body{
   box-shadow: var(--shadow);
   max-width: 380px;
 }
+.hidden.toast{ display:none; }
+
 .jsStatus{
   position: fixed;
   right: 14px;
