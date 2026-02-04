@@ -252,6 +252,7 @@ const views = {
   campaigns: $("view-campaigns"),
   campaign: $("view-campaign"),
   live: $("view-live"),
+  iriam: $("view-iriam"),
 };
 
 function setActiveNav(viewName){
