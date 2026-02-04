@@ -921,6 +921,48 @@ function pickGachaItem(items){
   }
   return cleaned[cleaned.length-1].name;
 }
+
+/* ===== Gacha Undo ===== */
+const gachaUndoStack = [];
+const GACHA_UNDO_MAX = 50;
+function updateGachaUndoBtn(){
+  const b = $("gachaUndoBtn");
+  if(b) b.disabled = gachaUndoStack.length === 0;
+}
+function pushGachaUndo(action){
+  gachaUndoStack.push(action);
+  if(gachaUndoStack.length > GACHA_UNDO_MAX) gachaUndoStack.shift();
+  updateGachaUndoBtn();
+}
+function undoLastGacha(){
+  const a = gachaUndoStack.pop();
+  updateGachaUndoBtn();
+  if(!a) return toast("戻せない");
+
+  // logs: remove the log inserted by gacha
+  const li = state.logs.findIndex(l => l.id === a.log_id);
+  if(li >= 0) state.logs.splice(li, 1);
+
+  // gacha history: truncate to the previous length (safe even if list is shorter)
+  const list = getGachaList(a.campaign_id, a.listener_name);
+  if(list.length > a.prev_hist_len) list.splice(a.prev_hist_len);
+
+  // restore active listener (optional)
+  if(a.prev_active){
+    state.active_listener[a.campaign_id] = a.prev_active;
+  }else{
+    delete state.active_listener[a.campaign_id];
+  }
+
+  saveState();
+  renderAll();
+
+  // clear result box (UI safety)
+  if($("gachaResultBox")) $("gachaResultBox").value = "";
+
+  toast("戻した");
+}
+
 function rollGacha(user, pt){
   const c = getCurrentCampaign();
   if(!c) return;
@@ -940,9 +982,18 @@ function rollGacha(user, pt){
     results.push(pickGachaItem(c.gacha.items || []) ?? "（景品未設定）");
   }
 
-  // ptは加算ログ
+  // ptは加算ログ（Undo用に直前状態を保存）
+  const logId = uid();
+  pushGachaUndo({
+    campaign_id: c.id,
+    listener_name: user,
+    log_id: logId,
+    prev_hist_len: getGachaList(c.id, user).length,
+    prev_active: getActiveListener(c.id),
+  });
+
   state.logs.push({
-    id: uid(),
+    id: logId,
     campaign_id: c.id,
     listener_name: user,
     delta_points: pt,
@@ -1213,6 +1264,11 @@ function renderLive(){
         if(!Number.isFinite(pt) || pt<=0) return toast("pt");
         rollGacha(user, pt);
       };
+    }
+
+    if($("gachaUndoBtn")){
+      updateGachaUndoBtn();
+      $("gachaUndoBtn").onclick = ()=> undoLastGacha();
     }
 
     if($("gachaCopyBtn")){
