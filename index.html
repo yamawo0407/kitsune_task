@@ -161,14 +161,14 @@
               </label>
               <label class="field">
                 <span>何ptで何連（pt）</span>
-                <input class="input" type="number" min="1" step="1" name="g_multiCost" placeholder="例：3000" />
+                <input class="input" type="number" min="0" step="1" name="g_multiCost" placeholder="例：3000（任意）" />
               </label>
             </div>
 
             <div class="grid2">
               <label class="field">
                 <span>何ptで何連（連数）</span>
-                <input class="input" type="number" min="1" step="1" name="g_multiCount" placeholder="例：10" />
+                <input class="input" type="number" min="0" step="1" name="g_multiCount" placeholder="例：10（任意）" />
               </label>
               <div></div>
             </div>
@@ -180,7 +180,9 @@
             <div id="gachaItemsBox" class="rulesBox"></div>
           </section>
 
-          <button class="btn primary" type="submit">企画を作成</button>
+          <!-- ★未入力時に無効化 -->
+          <button id="createCampaignBtn" class="btn primary" type="submit" disabled>企画を作成</button>
+          <div id="createCampaignHint" class="muted"></div>
         </form>
       </section>
     </section>
@@ -231,9 +233,80 @@
           <a class="btn ghost" href="#tasks">←</a>
           <a id="goConfirmBtn" class="btn ghost" href="#campaign=">返礼品状況一覧</a>
           <div class="pill">リアルタイム編集</div>
+          <!-- ★企画編集ボタン -->
+          <button id="editCampaignBtn" class="btn ghost" type="button">企画編集</button>
         </div>
         <div class="h1" id="liveTitle"></div>
         <div class="muted" id="liveMeta"></div>
+      </div>
+    </section>
+
+    <!-- ★企画編集パネル（ボタンを押した時だけ表示） -->
+    <section id="campaignEditPanel" class="card hidden">
+      <div class="card-head">
+        <div class="card-title">企画編集</div>
+        <div class="row gap wrapBtns">
+          <button id="cancelEditCampaignBtn" class="btn ghost small" type="button">キャンセル</button>
+          <button id="saveEditCampaignBtn" class="btn primary small" type="button">保存</button>
+        </div>
+      </div>
+
+      <div class="stack">
+        <label class="field">
+          <span>企画名</span>
+          <input id="editCampName" class="input" />
+        </label>
+
+        <label class="field">
+          <span>開始日</span>
+          <input id="editCampStart" class="input" type="date" />
+        </label>
+
+        <label class="field">
+          <span>方式</span>
+          <select id="editCampType" class="input">
+            <option value="achievement">達成型</option>
+            <option value="shopping">お買い物方式</option>
+            <option value="gacha">ガチャ</option>
+          </select>
+        </label>
+
+        <section id="editRulesSection" class="stack">
+          <div class="ruleHead">
+            <div class="card-title">返礼品</div>
+            <button id="editAddRuleRowBtn" type="button" class="btn ghost">＋行を追加</button>
+          </div>
+          <div id="editRulesBox" class="rulesBox"></div>
+        </section>
+
+        <section id="editGachaSection" class="stack hidden">
+          <div class="grid2">
+            <label class="field">
+              <span>1回の必要pt</span>
+              <input id="editGSingle" class="input" type="number" min="1" step="1" />
+            </label>
+            <label class="field">
+              <span>何ptで何連（pt）</span>
+              <input id="editGMultiCost" class="input" type="number" min="0" step="1" />
+            </label>
+          </div>
+
+          <div class="grid2">
+            <label class="field">
+              <span>何ptで何連（連数）</span>
+              <input id="editGMultiCount" class="input" type="number" min="0" step="1" />
+            </label>
+            <div></div>
+          </div>
+
+          <div class="ruleHead">
+            <div class="card-title">景品（出現率%）</div>
+            <button id="editAddGachaRowBtn" type="button" class="btn ghost">＋行を追加</button>
+          </div>
+          <div id="editGachaItemsBox" class="rulesBox"></div>
+        </section>
+
+        <div id="editCampaignHint" class="muted"></div>
       </div>
     </section>
 
