@@ -1,22 +1,15 @@
 "use strict";
 
 /* =========================
-   Utils
+   Safe DOM getter
 ========================= */
 const $ = (id) => document.getElementById(id);
 
+/* =========================
+   Status / Toast
+========================= */
 const jsStatus = $("jsStatus");
 if (jsStatus) jsStatus.textContent = "JS: OK";
-
-const STORAGE_KEY = "reward_task_manager_v21_fix";
-
-function uid(){ return Math.random().toString(16).slice(2) + Date.now().toString(16); }
-
-function escapeHtml(s){
-  return (s ?? "").toString().replace(/[&<>"']/g,(c)=>({
-    "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"
-  }[c]));
-}
 
 const toastEl = $("toast");
 let toastTimer = null;
@@ -26,6 +19,18 @@ function toast(msg){
   toastEl.classList.remove("hidden");
   clearTimeout(toastTimer);
   toastTimer = setTimeout(()=>toastEl.classList.add("hidden"), 1200);
+}
+
+/* =========================
+   Utils
+========================= */
+const STORAGE_KEY = "reward_task_manager_v23";
+
+function uid(){ return Math.random().toString(16).slice(2) + Date.now().toString(16); }
+function escapeHtml(s){
+  return (s ?? "").toString().replace(/[&<>"']/g,(c)=>({
+    "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"
+  }[c]));
 }
 
 /* =========================
@@ -69,14 +74,13 @@ function migrate(){
   state.campaigns.forEach(c=>{
     c.type = normalizeCampaignType(c.type);
     if(!c.created_at) c.created_at = new Date().toISOString();
-    if(!c.start_date && c.start) c.start_date = c.start; // 旧互換
     if(c.type === "gacha") ensureGacha(c);
   });
-  if(!state.delivery || typeof state.delivery !== "object") state.delivery = {};
-  if(!state.purchases || typeof state.purchases !== "object") state.purchases = {};
-  if(!state.gacha_history || typeof state.gacha_history !== "object") state.gacha_history = {};
-  if(!state.listener_pool || typeof state.listener_pool !== "object") state.listener_pool = {};
-  if(!state.active_listener || typeof state.active_listener !== "object") state.active_listener = {};
+  state.delivery ||= {};
+  state.purchases ||= {};
+  state.gacha_history ||= {};
+  state.listener_pool ||= {};
+  state.active_listener ||= {};
 }
 migrate(); saveState();
 
@@ -123,13 +127,11 @@ function setDeliveryStatus(campaignId, listenerName, status){
   m[listenerName] = (status === "done") ? "done" : "open";
   saveState();
 }
-
 function isCampaignDone(campaign){
   const totals = computeTotalsForCampaign(campaign.id);
   if(totals.length === 0) return false;
   return totals.every(r => getDeliveryStatus(campaign.id, r.listener_name) === "done");
 }
-
 function campaignSortDesc(a,b){
   const ad = (a.start_date||"");
   const bd = (b.start_date||"");
@@ -148,7 +150,6 @@ function getListenerPool(campaignId){
   }
   return state.listener_pool[campaignId];
 }
-
 function addListenerToPool(campaignId, name){
   const n = (name||"").trim();
   if(!n) return;
@@ -158,7 +159,6 @@ function addListenerToPool(campaignId, name){
     pool.sort((a,b)=>a.localeCompare(b));
   }
 }
-
 function setActiveListener(campaignId, name){
   const n = (name||"").trim();
   if(!n){
@@ -169,11 +169,9 @@ function setActiveListener(campaignId, name){
   }
   saveState();
 }
-
 function getActiveListener(campaignId){
   return (state.active_listener[campaignId] || "").trim();
 }
-
 function getAllKnownListeners(campaignId){
   const pool = getListenerPool(campaignId).slice();
   const totals = computeTotalsForCampaign(campaignId).map(r=>r.listener_name);
@@ -206,6 +204,10 @@ function undoPurchase(campaign, listenerName){
     return true;
   }
   return false;
+}
+function totalPurchasedCost(campaign, listenerName){
+  const arr = getPurchases(campaign.id, listenerName);
+  return arr.reduce((s,x)=>s + (Number(x.cost)||0), 0);
 }
 
 /* =========================
@@ -242,6 +244,32 @@ function gachaSummaryChips(campaignId, listenerName){
 }
 
 /* =========================
+   Reward summary for Campaign list
+========================= */
+function rewardSummaryText(c){
+  const type = normalizeCampaignType(c.type);
+
+  if(type === "gacha"){
+    ensureGacha(c);
+    const cost = c.gacha?.singleCost ? `1回${c.gacha.singleCost}pt` : "1回pt未設定";
+    const items = (c.gacha?.items || []).map(it=>it?.name).filter(Boolean);
+    const itemText = items.length ? items.join(" / ") : "景品未設定";
+    const text = `${cost}｜${itemText}`;
+    return text.length > 80 ? text.slice(0,80) + "…" : text;
+  }
+
+  const rules = rulesSorted(c.rules);
+  if(!rules.length) return "返礼品未設定";
+
+  const parts = rules.map(r=>{
+    if(type === "achievement") return `${r.threshold}pt達成：${r.reward}`;
+    return `${r.threshold}：${r.reward}`;
+  });
+  const joined = parts.join(" / ");
+  return joined.length > 80 ? joined.slice(0, 80) + "…" : joined;
+}
+
+/* =========================
    SPA routing
 ========================= */
 const views = {
@@ -263,14 +291,12 @@ function showView(name){
   Object.entries(views).forEach(([k, el])=> { if(el) el.classList.toggle("hidden", k !== name); });
   setActiveNav(name);
 }
-
 function parseHashParts(){
   const raw = (location.hash || "#home").slice(1);
   const [path, queryStr] = raw.split("?");
   const params = new URLSearchParams(queryStr || "");
   return { path: path || "home", params };
 }
-
 let currentCampaignId = null;
 let taskPageFilter = "all";
 
@@ -339,7 +365,7 @@ function renderHome(){
 }
 
 /* =========================
-   企画作成（達成/買物）ルールUI
+   Create campaign UI helpers
 ========================= */
 function addRuleRow(container, threshold="", reward=""){
   const el = document.createElement("div");
@@ -372,9 +398,6 @@ function collectRulesFrom(container){
   return rules;
 }
 
-/* =========================
-   ガチャ設定UI
-========================= */
 function addGachaRow(container, name="", rate=""){
   const el = document.createElement("div");
   el.className = "ruleRow";
@@ -405,9 +428,6 @@ function collectGachaItemsFrom(container){
   return items;
 }
 
-/* =========================
-   企画作成DOM
-========================= */
 function setCreateTypeUI(type){
   const isGacha = type === "gacha";
   $("createRulesSection")?.classList.toggle("hidden", isGacha);
@@ -478,7 +498,7 @@ $("createCampaignForm")?.addEventListener("submit",(e)=>{
 $("campaignSearch")?.addEventListener("input", renderCampaigns);
 
 /* =========================
-   企画一覧
+   Campaign list
 ========================= */
 function deleteCampaign(campaignId){
   state.campaigns = state.campaigns.filter(x=>x.id!==campaignId);
@@ -510,11 +530,16 @@ function renderCampaigns(){
     const done = isCampaignDone(c);
     const statusLabel = done ? "完了" : "未完了";
     const badge = done ? "✅" : "🔴";
+    const summary = rewardSummaryText(c);
+
     return `
       <div class="item">
-        <div>
+        <div style="min-width:0;">
           <div><strong>${escapeHtml(c.name)}</strong></div>
           <div class="muted">${escapeHtml(c.start_date)} / ${statusLabel}</div>
+          <div class="muted" style="margin-top:6px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">
+            ${escapeHtml(summary)}
+          </div>
         </div>
         <div class="itemActions">
           <button class="btn ghost small" type="button" data-open="${c.id}">確認</button>
@@ -546,7 +571,7 @@ function renderCampaigns(){
 }
 
 /* =========================
-   タスク管理（企画一覧）
+   Tasks list
 ========================= */
 $("filterAllCampaigns")?.addEventListener("click", ()=>{ taskPageFilter="all"; renderTaskCampaignList(); });
 $("filterOpenCampaigns")?.addEventListener("click", ()=>{ taskPageFilter="open"; renderTaskCampaignList(); });
@@ -591,7 +616,7 @@ function renderTaskCampaignList(){
 }
 
 /* =========================
-   返礼品セル描画
+   Reward rendering
 ========================= */
 function renderRewardCell(campaign, listenerName, points){
   const type = normalizeCampaignType(campaign.type);
@@ -608,16 +633,38 @@ function renderRewardCell(campaign, listenerName, points){
     return `<div class="shopItems">${list.map(x=>`<span class="shopItemChip">${escapeHtml(`${x.cost}pt達成：${x.reward}`)}</span>`).join("")}</div>`;
   }
 
-  // shopping：ルールは「買える候補」を表示（購入結果は purchases に入る）
+  // shopping: 購入済み＋買える候補
+  const spent = totalPurchasedCost(campaign, listenerName);
+  const remaining = Math.max(0, points - spent);
+
+  const bought = getPurchases(campaign.id, listenerName).map(x=>`${x.cost}：${x.reward}`);
+  const boughtHtml = bought.length
+    ? `<div class="shopItems">${bought.map(x=>`<span class="shopItemChip">${escapeHtml(x)}</span>`).join("")}</div>`
+    : `<div class="muted">—</div>`;
+
   const rules = rulesSorted(campaign.rules);
-  if(!rules.length) return `<div class="muted">—</div>`;
-  const can = rules.filter(r=>points>=r.threshold).map(r=>`${r.threshold}：${r.reward}`);
-  if(!can.length) return `<div class="muted">—</div>`;
-  return `<div class="shopItems">${can.map(x=>`<span class="shopItemChip">${escapeHtml(x)}</span>`).join("")}</div>`;
+  if(!rules.length){
+    return boughtHtml;
+  }
+
+  const can = rules.filter(r=>remaining>=r.threshold);
+  const canHtml = can.length
+    ? `<div class="shopItems">${can.map(r=>`<button class="btn small ghost" data-buy="${r.threshold}" data-buyname="${escapeHtml(r.reward)}">買う</button>`).join(" ")}</div>`
+    : `<div class="muted">—</div>`;
+
+  return `
+    <div class="muted" style="margin-bottom:6px;">残りpt：${remaining}</div>
+    ${boughtHtml}
+    <div class="muted" style="margin-top:8px;">購入</div>
+    ${canHtml}
+    <div class="row gap" style="margin-top:8px;">
+      <button class="btn small ghost" data-undo-buy="1">購入を戻す</button>
+    </div>
+  `;
 }
 
 /* =========================
-   企画確認（返礼品状況一覧）
+   Campaign confirm view
 ========================= */
 function renderCampaign(){
   const c = getCurrentCampaign();
@@ -657,6 +704,7 @@ function renderCampaign(){
     `;
   }).join("");
 
+  // delivery
   body.querySelectorAll("[data-delivery]").forEach(sel=>{
     sel.addEventListener("change", ()=>{
       const name = sel.getAttribute("data-delivery");
@@ -665,6 +713,31 @@ function renderCampaign(){
       renderAll();
     });
   });
+
+  // shopping purchase buttons inside reward cell
+  if(normalizeCampaignType(c.type)==="shopping"){
+    body.querySelectorAll("[data-buy]").forEach(btn=>{
+      btn.addEventListener("click", ()=>{
+        const tr = btn.closest("tr");
+        const name = tr?.querySelector("td")?.textContent?.trim();
+        if(!name) return;
+        const cost = Number(btn.getAttribute("data-buy")||0);
+        const reward = btn.getAttribute("data-buyname")||"";
+        addPurchase(c, name, cost, reward);
+        toast("購入");
+        renderAll();
+      });
+    });
+    body.querySelectorAll("[data-undo-buy]").forEach(btn=>{
+      btn.addEventListener("click", ()=>{
+        const tr = btn.closest("tr");
+        const name = tr?.querySelector("td")?.textContent?.trim();
+        if(!name) return;
+        if(undoPurchase(c, name)) toast("戻す");
+        renderAll();
+      });
+    });
+  }
 
   $("goConfirmBtn") && ($("goConfirmBtn").href = `#campaign=${c.id}`);
 }
@@ -676,10 +749,13 @@ function fillSelect(selectEl, options, selectedValue){
   if(!selectEl) return;
   const safe = options.map(x=>x.trim()).filter(Boolean);
   const selected = (selectedValue||"").trim();
-  selectEl.innerHTML = [
+
+  const html = [
     `<option value="">未選択</option>`,
     ...safe.map(name=>`<option value="${escapeHtml(name)}">${escapeHtml(name)}</option>`)
   ].join("");
+
+  selectEl.innerHTML = html;
   selectEl.value = (selected && safe.includes(selected)) ? selected : "";
 }
 
@@ -688,7 +764,6 @@ function renderRewardList(c){
   if(!box) return;
 
   const type = normalizeCampaignType(c.type);
-
   if(type === "gacha"){
     ensureGacha(c);
     const items = c.gacha.items || [];
@@ -718,10 +793,8 @@ function renderLiveTable(c){
     tbody.innerHTML = `<tr><td colspan="3" class="muted">データなし</td></tr>`;
     return;
   }
-
-  // ★ 行タップで「ライブ入力の名前」に反映（要望）
   tbody.innerHTML = totals.map(r=>`
-    <tr class="rowClickable" data-pick="${escapeHtml(r.listener_name)}">
+    <tr data-pick="${escapeHtml(r.listener_name)}" style="cursor:pointer;">
       <td>${escapeHtml(r.listener_name)}</td>
       <td class="right">${r.points}</td>
       <td class="center">${renderRewardCell(c, r.listener_name, r.points)}</td>
@@ -732,20 +805,17 @@ function renderLiveTable(c){
     tr.addEventListener("click", ()=>{
       const name = tr.getAttribute("data-pick");
       setActiveListener(c.id, name);
-      // ★入力欄に名前を残す（要望）
+      // 入力欄に残す
       if($("addNameInput")) $("addNameInput").value = name;
       if($("listenerSelect")) $("listenerSelect").value = name;
       if($("gachaAddNameInput")) $("gachaAddNameInput").value = name;
       if($("gachaListenerSelect")) $("gachaListenerSelect").value = name;
       toast("選択");
-      renderLive(); // 表示を同期
+      renderLive();
     });
   });
 }
 
-/* =========================
-   Live: logs
-========================= */
 function addLog(delta){
   const c = getCurrentCampaign();
   if(!c) return;
@@ -766,7 +836,7 @@ function addLog(delta){
 
   saveState();
   renderAll();
-  $("liveMsg") && ($("liveMsg").textContent = `${delta>0?"+":""}${delta} / ${name}`);
+  if($("liveMsg")) $("liveMsg").textContent = `${delta>0?"+":""}${delta} / ${name}`;
   toast("反映");
 }
 
@@ -784,11 +854,6 @@ function undoLastLog(){
   }
 }
 
-/* =========================
-   ★ 名前追加（通常 / ガチャ 共通）
-   - 追加ボタン方式
-   - 追加後も入力欄に名前を残す（要望）
-========================= */
 function addNewListenerFromInput(inputId, selectId){
   const c = getCurrentCampaign();
   if(!c) return;
@@ -801,16 +866,17 @@ function addNewListenerFromInput(inputId, selectId){
   addListenerToPool(c.id, name);
   setActiveListener(c.id, name);
 
-  // ★消さない（要望）
+  // 入力欄は消さない
   if(input) input.value = name;
 
+  saveState();
   renderAll();
   if(sel) sel.value = name;
   toast("追加");
 }
 
 /* =========================
-   Gacha core
+   Gacha
 ========================= */
 function calcGachaPulls(pt, g){
   const singleCost = Math.max(0, Number(g.singleCost||0));
@@ -828,7 +894,6 @@ function calcGachaPulls(pt, g){
   const total = multiTimes * (multiCount||0) + singleTimes;
   return { total };
 }
-
 function pickGachaItem(items){
   const cleaned = items
     .filter(x => x && x.name && Number.isFinite(Number(x.rate)) && Number(x.rate) > 0)
@@ -844,7 +909,6 @@ function pickGachaItem(items){
   }
   return cleaned[cleaned.length-1].name;
 }
-
 function rollGacha(user, pt){
   const c = getCurrentCampaign();
   if(!c) return;
@@ -852,7 +916,7 @@ function rollGacha(user, pt){
 
   const calc = calcGachaPulls(pt, c.gacha);
   if(calc.total <= 0){
-    $("gachaResultBox") && ($("gachaResultBox").value = "");
+    if($("gachaResultBox")) $("gachaResultBox").value = "";
     return toast("回せない");
   }
 
@@ -864,7 +928,7 @@ function rollGacha(user, pt){
     results.push(pickGachaItem(c.gacha.items || []) ?? "（景品未設定）");
   }
 
-  // ptは加算ログとして残す
+  // ptは加算ログ
   state.logs.push({
     id: uid(),
     campaign_id: c.id,
@@ -875,7 +939,7 @@ function rollGacha(user, pt){
 
   addGachaResult(c.id, user, pt, results);
 
-  // 表示：番号なし、使用ポイントは出さない、被りは×n
+  // 表示：番号なし、使用ptは出さない、被りは×n
   const count = new Map();
   for(const r of results) count.set(r, (count.get(r) || 0) + 1);
   const lines = Array.from(count.entries())
@@ -893,7 +957,7 @@ function rollGacha(user, pt){
 }
 
 /* =========================
-   LIVE render
+   LIVE render + bindings
 ========================= */
 function renderLive(){
   const c = getCurrentCampaign();
@@ -913,45 +977,37 @@ function renderLive(){
   renderRewardList(c);
   renderLiveTable(c);
 
-  // options
   const names = getAllKnownListeners(c.id);
   const active = getActiveListener(c.id);
 
   fillSelect($("listenerSelect"), names, active);
   fillSelect($("gachaListenerSelect"), names, active);
 
-  // ★ active を入力欄に表示（要望：現在入力してる人が出てるように）
+  // active を入力欄に残す
   if(isGacha){
     if($("gachaAddNameInput") && active) $("gachaAddNameInput").value = active;
   }else{
     if($("addNameInput") && active) $("addNameInput").value = active;
   }
 
-  // ★ 追加ボタン（通常）
+  // 追加
   if($("addNameBtn")) $("addNameBtn").onclick = ()=> addNewListenerFromInput("addNameInput", "listenerSelect");
-  if($("addNameInput")){
-    $("addNameInput").onkeydown = (e)=>{ if(e.key==="Enter"){ e.preventDefault(); addNewListenerFromInput("addNameInput","listenerSelect"); } };
-  }
+  if($("addNameInput")) $("addNameInput").onkeydown = (e)=>{ if(e.key==="Enter"){ e.preventDefault(); addNewListenerFromInput("addNameInput","listenerSelect"); } };
 
-  // ★ 追加ボタン（ガチャ）
   if($("gachaAddNameBtn")) $("gachaAddNameBtn").onclick = ()=> addNewListenerFromInput("gachaAddNameInput", "gachaListenerSelect");
-  if($("gachaAddNameInput")){
-    $("gachaAddNameInput").onkeydown = (e)=>{ if(e.key==="Enter"){ e.preventDefault(); addNewListenerFromInput("gachaAddNameInput","gachaListenerSelect"); } };
-  }
+  if($("gachaAddNameInput")) $("gachaAddNameInput").onkeydown = (e)=>{ if(e.key==="Enter"){ e.preventDefault(); addNewListenerFromInput("gachaAddNameInput","gachaListenerSelect"); } };
 
-  // select change
+  // select sync
   if($("listenerSelect")){
     $("listenerSelect").onchange = ()=>{
       const n = ($("listenerSelect").value||"").trim();
       if(!n) return;
       setActiveListener(c.id, n);
-      // ★入力欄も同期
       if($("addNameInput")) $("addNameInput").value = n;
       toast("選択");
       renderLive();
     };
   }
-
   if($("gachaListenerSelect")){
     $("gachaListenerSelect").onchange = ()=>{
       const n = ($("gachaListenerSelect").value||"").trim();
@@ -974,12 +1030,11 @@ function renderLive(){
     };
   }
 
-  // add buttons (+)
+  // add buttons
   document.querySelectorAll("[data-add]").forEach(btn=>{
     btn.onclick = ()=> addLog(parseInt(btn.getAttribute("data-add"),10));
   });
 
-  // custom add/sub
   if($("addCustomBtn")){
     $("addCustomBtn").onclick = ()=>{
       const v = parseInt(($("customPoints")?.value || "").toString(),10);
@@ -988,6 +1043,7 @@ function renderLive(){
       if($("customPoints")) $("customPoints").value = "";
     };
   }
+
   if($("subtractBtn")){
     $("subtractBtn").onclick = ()=>{
       const v = parseInt(($("customPoints")?.value || "").toString(),10);
@@ -996,9 +1052,10 @@ function renderLive(){
       if($("customPoints")) $("customPoints").value = "";
     };
   }
+
   if($("undoBtn")) $("undoBtn").onclick = ()=> undoLastLog();
 
-  // gacha roll + copy (ガチャ企画だけ)
+  // gacha
   if(isGacha){
     if($("gachaRollBtn")){
       $("gachaRollBtn").onclick = ()=>{
@@ -1033,7 +1090,7 @@ function renderLive(){
 }
 
 /* =========================
-   renderAll
+   renderAll + init
 ========================= */
 function renderAll(){
   renderHome();
