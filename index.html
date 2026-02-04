@@ -1,39 +1,348 @@
 <!doctype html>
 <html lang="ja">
 <head>
-  <meta charset="utf-8">
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>配信管理ツール</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <link rel="stylesheet" href="styles.css">
+  <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
+  <header class="topbar">
+    <div class="brand">
+      <div class="brand__title">配信管理ツール</div>
+      <div class="brand__sub">※非公式／保存先はこの端末（localStorage）</div>
+    </div>
 
-<header>
-  <h1>配信管理ツール</h1>
-  <nav>
-    <a href="#home">ホーム</a>
-    <a href="#rewards">返礼品管理</a>
-    <a href="#rank">ランク管理</a>
-  </nav>
-</header>
+    <nav class="nav">
+      <a class="nav__link" href="#home" data-route="home">ホーム</a>
+      <a class="nav__link" href="#rewards" data-route="rewards">返礼品管理</a>
+      <a class="nav__link" href="#campaigns" data-route="campaigns">企画作成</a>
+      <a class="nav__link" href="#live" data-route="live">ライブ入力</a>
+      <a class="nav__link" href="#rank" data-route="rank">ランク管理</a>
+    </nav>
 
-<main>
-  <section id="view-home" class="view">
-    <h2>ホーム</h2>
-    <p>機能を選択してください。</p>
-  </section>
+    <div class="topbar__actions">
+      <button class="btn btn--sub" id="btnBackup">バックアップ</button>
+      <label class="btn btn--sub btn--file">
+        復元
+        <input id="fileRestore" type="file" accept="application/json" />
+      </label>
+      <button class="btn btn--danger" id="btnReset">全削除</button>
+    </div>
+  </header>
 
-  <section id="view-rewards" class="view hidden">
-    <h2>返礼品管理</h2>
-    <p>（ここに返礼品管理機能が入ります）</p>
-  </section>
+  <main class="container">
 
-  <section id="view-rank" class="view hidden">
-    <h2>ランク管理</h2>
-    <p>（ここにIRIAMランク計算を後で入れます）</p>
-  </section>
-</main>
+    <!-- HOME -->
+    <section class="view" id="view-home">
+      <h1>ホーム</h1>
+      <div class="cards">
+        <a class="card" href="#rewards">
+          <div class="card__title">返礼品管理</div>
+          <div class="card__desc">企画の状況確認（未完了/完了）</div>
+        </a>
+        <a class="card" href="#campaigns">
+          <div class="card__title">企画作成</div>
+          <div class="card__desc">達成型 / お買い物方式 / ガチャ</div>
+        </a>
+        <a class="card" href="#live">
+          <div class="card__title">ライブ入力</div>
+          <div class="card__desc">pt加算・ガチャ・Undo付き</div>
+        </a>
+        <a class="card" href="#rank">
+          <div class="card__title">ランク管理</div>
+          <div class="card__desc">60日表を作る（入力は保存）</div>
+        </a>
+      </div>
 
-<script src="app.js"></script>
+      <div class="panel">
+        <div class="panel__title">状況</div>
+        <div class="stats" id="homeStats"></div>
+      </div>
+
+      <div class="note">
+        <div class="note__title">注意</div>
+        <ul>
+          <li>保存先はこのブラウザ（localStorage）です。端末/ブラウザを変えると同期されません。</li>
+          <li>定期的に「バックアップ」推奨。</li>
+        </ul>
+      </div>
+    </section>
+
+    <!-- REWARDS -->
+    <section class="view hidden" id="view-rewards">
+      <div class="viewhead">
+        <h1>返礼品管理</h1>
+        <div class="seg">
+          <button class="seg__btn is-active" data-filter="all">すべて</button>
+          <button class="seg__btn" data-filter="open">未完了</button>
+          <button class="seg__btn" data-filter="done">完了</button>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="panel__title">企画一覧</div>
+        <div id="rewardsList" class="list"></div>
+      </div>
+    </section>
+
+    <!-- CAMPAIGNS -->
+    <section class="view hidden" id="view-campaigns">
+      <div class="viewhead">
+        <h1>企画作成</h1>
+      </div>
+
+      <div class="grid2">
+        <div class="panel">
+          <div class="panel__title">企画一覧</div>
+          <div id="campaignList" class="list"></div>
+        </div>
+
+        <div class="panel">
+          <div class="panel__title">新規企画</div>
+
+          <div class="form">
+            <label class="field">
+              <div class="field__label">企画名</div>
+              <input id="newName" class="input" placeholder="例）9月アニバ返礼" />
+            </label>
+
+            <label class="field">
+              <div class="field__label">開始日</div>
+              <input id="newStart" class="input" type="date" />
+            </label>
+
+            <label class="field">
+              <div class="field__label">方式</div>
+              <select id="newMode" class="input">
+                <option value="achieve">達成型</option>
+                <option value="shop">お買い物方式</option>
+                <option value="gacha">ガチャ</option>
+              </select>
+            </label>
+
+            <div class="subpanel" id="blockRewards">
+              <div class="subpanel__title">返礼品</div>
+              <div class="tablewrap">
+                <table class="table" id="tblRewards">
+                  <thead>
+                    <tr>
+                      <th>返礼品名</th>
+                      <th>必要pt</th>
+                      <th>備考</th>
+                      <th></th>
+                    </tr>
+                  </thead>
+                  <tbody></tbody>
+                </table>
+              </div>
+              <button class="btn btn--sub" id="btnAddRewardRow">＋行を追加</button>
+            </div>
+
+            <div class="subpanel hidden" id="blockGacha">
+              <div class="subpanel__title">ガチャ設定</div>
+              <div class="grid2">
+                <label class="field">
+                  <div class="field__label">1回の必要pt</div>
+                  <input id="gachaCost" class="input" type="number" min="0" value="100" />
+                </label>
+                <div></div>
+              </div>
+
+              <div class="tablewrap">
+                <table class="table" id="tblGacha">
+                  <thead>
+                    <tr>
+                      <th>景品名</th>
+                      <th>出現率(%)</th>
+                      <th>備考</th>
+                      <th></th>
+                    </tr>
+                  </thead>
+                  <tbody></tbody>
+                </table>
+              </div>
+              <button class="btn btn--sub" id="btnAddGachaRow">＋行を追加</button>
+            </div>
+
+            <div class="actions">
+              <button class="btn" id="btnCreateCampaign">企画を作成</button>
+            </div>
+
+            <div class="hint">
+              ※「未入力があると作成できない」仕様です（赤表示になります）
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- LIVE -->
+    <section class="view hidden" id="view-live">
+      <div class="viewhead">
+        <h1>ライブ入力</h1>
+      </div>
+
+      <div class="panel">
+        <div class="panel__title">対象企画</div>
+        <div class="row">
+          <select id="liveCampaign" class="input"></select>
+          <button class="btn btn--sub" id="btnOpenEdit">企画編集</button>
+        </div>
+      </div>
+
+      <div class="grid2">
+        <div class="panel">
+          <div class="panel__title">リスナー</div>
+
+          <div class="row">
+            <input id="liveNewListener" class="input" placeholder="新しい名前" />
+            <button class="btn btn--sub" id="btnAddListener">追加</button>
+          </div>
+
+          <div class="row">
+            <select id="liveListener" class="input"></select>
+            <button class="btn btn--danger" id="btnRemoveListener">解除</button>
+          </div>
+
+          <div class="chiprow" id="ptChips"></div>
+
+          <div class="row">
+            <input id="livePt" class="input" type="number" min="0" placeholder="加算pt" />
+            <button class="btn" id="btnAddPt">加算</button>
+            <button class="btn btn--sub" id="btnUndoPt" disabled>ひとつもどる</button>
+          </div>
+
+          <div class="row">
+            <input id="liveMinus" class="input" type="number" min="0" placeholder="任意の減算" />
+            <button class="btn btn--sub" id="btnMinus">減算</button>
+          </div>
+
+          <div class="hr"></div>
+
+          <div id="gachaArea" class="subpanel hidden">
+            <div class="subpanel__title">ガチャ</div>
+            <div class="row">
+              <div class="pill">使用pt: <span id="gachaCostLive">-</span></div>
+              <input id="gachaUsePt" class="input" type="number" min="0" placeholder="使用pt（任意）" />
+            </div>
+            <div class="row">
+              <button class="btn" id="btnRoll">回す</button>
+              <button class="btn btn--sub" id="btnCopyGacha">コピー</button>
+              <button class="btn btn--sub" id="btnUndoGacha" disabled>ひとつもどる</button>
+            </div>
+            <textarea id="gachaResult" class="textarea" placeholder="結果" readonly></textarea>
+          </div>
+        </div>
+
+        <div class="panel">
+          <div class="panel__title">返礼品状況</div>
+          <div class="tablewrap">
+            <table class="table" id="tblLiveStatus">
+              <thead>
+                <tr>
+                  <th>名前</th>
+                  <th>合計pt</th>
+                  <th>返礼品</th>
+                  <th>状況</th>
+                </tr>
+              </thead>
+              <tbody></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- Campaign edit modal -->
+      <div class="modal hidden" id="editModal">
+        <div class="modal__backdrop" data-close="1"></div>
+        <div class="modal__box">
+          <div class="modal__head">
+            <div class="modal__title">企画編集</div>
+            <div class="row">
+              <button class="btn btn--sub" id="btnCancelEdit">キャンセル</button>
+              <button class="btn" id="btnSaveEdit">保存</button>
+            </div>
+          </div>
+          <div class="modal__body" id="editBody"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- RANK -->
+    <section class="view hidden" id="view-rank">
+      <div class="viewhead">
+        <h1>ランク管理（60日）</h1>
+      </div>
+
+      <div class="note">
+        ※非公式ツール／入力はこの端末（localStorage）に保存されます。
+      </div>
+
+      <div class="panel">
+        <div class="panel__title">入力</div>
+        <div class="grid2">
+          <label class="field">
+            <div class="field__label">現在のランク</div>
+            <select id="rankNow" class="input">
+              <option>S3</option><option>S2</option><option>S1</option>
+              <option>A3</option><option>A2</option><option>A1</option>
+              <option>B3</option><option>B2</option><option>B1</option>
+              <option>C5</option><option>C4</option><option>C3</option><option>C2</option><option>C1</option>
+              <option>D</option>
+            </select>
+          </label>
+
+          <label class="field">
+            <div class="field__label">ランクダウンまでの日数</div>
+            <select id="rankRemain" class="input">
+              <option value="6">6日</option><option value="5">5日</option><option value="4">4日</option>
+              <option value="3">3日</option><option value="2">2日</option><option value="1">1日</option>
+              <option value="0">0日</option>
+            </select>
+          </label>
+
+          <label class="field">
+            <div class="field__label">昨日までの累計プラス（初日は0）</div>
+            <input id="rankSumPlus" class="input" type="number" value="0" />
+          </label>
+
+          <label class="field">
+            <div class="field__label">現在のスキップパスの枚数</div>
+            <input id="rankPass" class="input" type="number" value="0" />
+          </label>
+
+          <label class="field">
+            <div class="field__label">計算開始日</div>
+            <input id="rankStart" class="input" type="date" />
+          </label>
+
+          <div class="field">
+            <div class="field__label"> </div>
+            <button class="btn" id="btnRankRun">実 行</button>
+          </div>
+        </div>
+
+        <div class="hr"></div>
+
+        <div class="pill">今日のパス残数: <b id="rankPassToday">0</b> 枚（※月曜に+1、上限10）</div>
+
+        <div class="tablewrap">
+          <table class="table" id="tblRank">
+            <thead>
+              <tr>
+                <th>日付</th><th>ランク</th><th>残り</th><th>プラス</th><th>スキパ</th><th>累計プラス</th><th>判定</th><th>パス残数</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+
+      </div>
+    </section>
+
+  </main>
+
+  <script src="app.js"></script>
 </body>
 </html>
