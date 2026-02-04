@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>返礼品タスクマネージャー</title>
+  <title>配信管理ツール</title>
   <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
@@ -11,12 +11,12 @@
     <div class="wrap topbar-inner">
       <div class="brand">
         <div class="logo">返</div>
-        <div class="brand-name">返礼品タスクマネージャー</div>
+        <div class="brand-name">配信管理ツール</div>
       </div>
 
       <nav class="nav">
         <a href="#home" class="navlink" data-nav="home">ホーム</a>
-        <a href="#tasks" class="navlink" data-nav="tasks">タスク管理</a>
+        <a href="#tasks" class="navlink" data-nav="tasks">返礼品管理</a>
         <a href="#campaigns" class="navlink" data-nav="campaigns">企画作成</a>
         <a href="#iriam" class="navlink" data-nav="iriam">ランク管理</a>
       </nav>
@@ -38,7 +38,7 @@
       <div class="choice-grid">
         <a class="choice-card" href="#tasks">
           <div class="choice-icon">✅</div>
-          <div class="choice-main">タスク管理</div>
+          <div class="choice-main">返礼品管理</div>
         </a>
         <a class="choice-card" href="#iriam">
           <div class="choice-icon">📈</div>
@@ -89,7 +89,7 @@
   <!-- ===== TASKS ===== -->
   <main id="view-tasks" class="wrap stack hidden">
     <section class="pagehead">
-      <div class="h1">タスク管理</div>
+      <div class="h1">返礼品管理</div>
     </section>
 
     <section class="row gap wrapBtns">
@@ -431,12 +431,7 @@
     </section>
   </main>
 
-  <div id="jsStatus" class="jsStatus">JS: ...</div>
-  <div id="toast" class="toast hidden"></div>
 
-  <script src="app.js"></script>
-</body>
-</html>
   <section id="view-iriam" class="stack hidden">
     <div class="pagehead">
       <div>
@@ -447,7 +442,7 @@
     <div class="card" id="iriamRoot">
 <div class="container">
     <div class="card">
-        <h1>🛠 IRIAMランク管理システム (60日)</h1>
+        <h1>🛠 ランク管理（60日）</h1>
         
         <div class="setup-grid">
             <div>
@@ -689,5 +684,9 @@
     </div>
   </section>
 
+  <div id="jsStatus" class="jsStatus">JS: ...</div>
+  <div id="toast" class="toast hidden"></div>
 
-
+  <script src="app.js"></script>
+</body>
+</html>
