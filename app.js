@@ -1,13 +1,8 @@
 "use strict";
 
-/* =========================
-   Safe DOM getter
-========================= */
 const $ = (id) => document.getElementById(id);
 
-/* =========================
-   Status / Toast
-========================= */
+/* ===== Status / Toast ===== */
 const jsStatus = $("jsStatus");
 if (jsStatus) jsStatus.textContent = "JS: OK";
 
@@ -21,10 +16,8 @@ function toast(msg){
   toastTimer = setTimeout(()=>toastEl.classList.add("hidden"), 1200);
 }
 
-/* =========================
-   Utils
-========================= */
-const STORAGE_KEY = "reward_task_manager_v23";
+/* ===== Utils ===== */
+const STORAGE_KEY = "reward_task_manager_v24";
 
 function uid(){ return Math.random().toString(16).slice(2) + Date.now().toString(16); }
 function escapeHtml(s){
@@ -33,9 +26,7 @@ function escapeHtml(s){
   }[c]));
 }
 
-/* =========================
-   State
-========================= */
+/* ===== State ===== */
 function loadState(){
   try{
     const raw = localStorage.getItem(STORAGE_KEY);
@@ -59,7 +50,6 @@ function saveState(){ localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); 
 function normalizeCampaignType(t){
   return (t === "shopping" || t === "achievement" || t === "gacha") ? t : "achievement";
 }
-
 function ensureGacha(c){
   if(!c.gacha || typeof c.gacha !== "object"){
     c.gacha = { singleCost: 0, multiCost: 0, multiCount: 0, items: [] };
@@ -69,12 +59,13 @@ function ensureGacha(c){
   c.gacha.multiCost  = Number(c.gacha.multiCost||0);
   c.gacha.multiCount = Number(c.gacha.multiCount||0);
 }
-
 function migrate(){
   state.campaigns.forEach(c=>{
     c.type = normalizeCampaignType(c.type);
     if(!c.created_at) c.created_at = new Date().toISOString();
+    if(!c.start_date && c.start) c.start_date = c.start;
     if(c.type === "gacha") ensureGacha(c);
+    c.rules ||= [];
   });
   state.delivery ||= {};
   state.purchases ||= {};
@@ -84,21 +75,17 @@ function migrate(){
 }
 migrate(); saveState();
 
-/* =========================
-   Calculations
-========================= */
+/* ===== Calculations ===== */
 function rulesSorted(rules){
   return (Array.isArray(rules) ? rules : [])
     .filter(r => Number.isFinite(r.threshold) && (r.reward||"").trim())
     .slice()
     .sort((a,b)=>a.threshold-b.threshold);
 }
-
 function achievedRewards(campaign, points){
   const rules = rulesSorted(campaign.rules);
   return rules.filter(r => points >= r.threshold).map(r => ({ cost:r.threshold, reward:r.reward }));
 }
-
 function computeTotalsForCampaign(campaignId){
   const map = new Map();
   for(const log of state.logs.filter(l=>l.campaign_id===campaignId)){
@@ -111,9 +98,7 @@ function computeTotalsForCampaign(campaignId){
   return rows;
 }
 
-/* =========================
-   Delivery
-========================= */
+/* ===== Delivery ===== */
 function getDeliveryMap(campaignId){
   if (!state.delivery[campaignId] || typeof state.delivery[campaignId] !== "object") state.delivery[campaignId] = {};
   return state.delivery[campaignId];
@@ -141,9 +126,7 @@ function campaignSortDesc(a,b){
   return bc.localeCompare(ac);
 }
 
-/* =========================
-   Listener pool + Active
-========================= */
+/* ===== Listener pool ===== */
 function getListenerPool(campaignId){
   if(!state.listener_pool[campaignId] || !Array.isArray(state.listener_pool[campaignId])){
     state.listener_pool[campaignId] = [];
@@ -179,9 +162,7 @@ function getAllKnownListeners(campaignId){
   return Array.from(set).sort((a,b)=>a.localeCompare(b));
 }
 
-/* =========================
-   Purchases (shopping)
-========================= */
+/* ===== Shopping purchases ===== */
 function getPurchaseMap(campaignId){
   if(!state.purchases[campaignId] || typeof state.purchases[campaignId] !== "object") state.purchases[campaignId] = {};
   return state.purchases[campaignId];
@@ -210,9 +191,7 @@ function totalPurchasedCost(campaign, listenerName){
   return arr.reduce((s,x)=>s + (Number(x.cost)||0), 0);
 }
 
-/* =========================
-   Gacha history
-========================= */
+/* ===== Gacha history ===== */
 function getGachaCampaignMap(campaignId){
   if(!state.gacha_history[campaignId] || typeof state.gacha_history[campaignId] !== "object"){
     state.gacha_history[campaignId] = {};
@@ -243,12 +222,9 @@ function gachaSummaryChips(campaignId, listenerName){
     .map(([name, n])=>`${name} ×${n}`);
 }
 
-/* =========================
-   Reward summary for Campaign list
-========================= */
+/* ===== Reward summary for Campaign list ===== */
 function rewardSummaryText(c){
   const type = normalizeCampaignType(c.type);
-
   if(type === "gacha"){
     ensureGacha(c);
     const cost = c.gacha?.singleCost ? `1回${c.gacha.singleCost}pt` : "1回pt未設定";
@@ -266,12 +242,10 @@ function rewardSummaryText(c){
     return `${r.threshold}：${r.reward}`;
   });
   const joined = parts.join(" / ");
-  return joined.length > 80 ? joined.slice(0, 80) + "…" : joined;
+  return joined.length > 80 ? joined.slice(0,80) + "…" : joined;
 }
 
-/* =========================
-   SPA routing
-========================= */
+/* ===== SPA routing ===== */
 const views = {
   home: $("view-home"),
   tasks: $("view-tasks"),
@@ -297,6 +271,7 @@ function parseHashParts(){
   const params = new URLSearchParams(queryStr || "");
   return { path: path || "home", params };
 }
+
 let currentCampaignId = null;
 let taskPageFilter = "all";
 
@@ -350,9 +325,7 @@ function route(){
 }
 window.addEventListener("hashchange", ()=>{ route(); renderAll(); });
 
-/* =========================
-   HOME
-========================= */
+/* ===== HOME ===== */
 function renderHome(){
   const all = state.campaigns.length;
   const done = state.campaigns.filter(c=>isCampaignDone(c)).length;
@@ -364,9 +337,7 @@ function renderHome(){
   $("overallPill") && ($("overallPill").textContent = open>0 ? `未完了 ${open}` : "未完了なし");
 }
 
-/* =========================
-   Create campaign UI helpers
-========================= */
+/* ===== Create campaign UI helpers ===== */
 function addRuleRow(container, threshold="", reward=""){
   const el = document.createElement("div");
   el.className = "ruleRow";
@@ -384,14 +355,19 @@ function addRuleRow(container, threshold="", reward=""){
       <button class="btn ghost" type="button" data-del>削除</button>
     </div>
   `;
-  el.querySelector("[data-del]")?.addEventListener("click", ()=>el.remove());
+  el.querySelector("[data-del]")?.addEventListener("click", ()=>{
+    el.remove();
+    validateCreateForm();
+  });
+  el.querySelectorAll("input").forEach(inp=> inp.addEventListener("input", validateCreateForm));
   container.appendChild(el);
 }
 function collectRulesFrom(container){
   const rules = [];
   container.querySelectorAll(".ruleRow").forEach(row=>{
-    const th = parseInt(row.querySelector("[data-threshold]")?.value, 10);
+    const thRaw = row.querySelector("[data-threshold]")?.value;
     const rw = (row.querySelector("[data-reward]")?.value||"").toString().trim();
+    const th = parseInt(thRaw, 10);
     if(Number.isFinite(th) && rw) rules.push({threshold: th, reward: rw});
   });
   rules.sort((a,b)=>a.threshold-b.threshold);
@@ -415,7 +391,11 @@ function addGachaRow(container, name="", rate=""){
       <button class="btn ghost" type="button" data-del>削除</button>
     </div>
   `;
-  el.querySelector("[data-del]")?.addEventListener("click", ()=>el.remove());
+  el.querySelector("[data-del]")?.addEventListener("click", ()=>{
+    el.remove();
+    validateCreateForm();
+  });
+  el.querySelectorAll("input").forEach(inp=> inp.addEventListener("input", validateCreateForm));
   container.appendChild(el);
 }
 function collectGachaItemsFrom(container){
@@ -432,11 +412,12 @@ function setCreateTypeUI(type){
   const isGacha = type === "gacha";
   $("createRulesSection")?.classList.toggle("hidden", isGacha);
   $("createGachaSection")?.classList.toggle("hidden", !isGacha);
+  validateCreateForm();
 }
 
 $("createTypeSelect")?.addEventListener("change", ()=> setCreateTypeUI($("createTypeSelect").value));
-$("addRuleRowBtn")?.addEventListener("click", ()=> { const b=$("rulesBox"); if(b) addRuleRow(b, "", ""); });
-$("addGachaRowBtn")?.addEventListener("click", ()=> { const b=$("gachaItemsBox"); if(b) addGachaRow(b, "", ""); });
+$("addRuleRowBtn")?.addEventListener("click", ()=> { const b=$("rulesBox"); if(b) addRuleRow(b, "", ""); validateCreateForm(); });
+$("addGachaRowBtn")?.addEventListener("click", ()=> { const b=$("gachaItemsBox"); if(b) addGachaRow(b, "", ""); validateCreateForm(); });
 
 (function initRuleDefaults(){
   const b = $("rulesBox");
@@ -452,16 +433,64 @@ $("addGachaRowBtn")?.addEventListener("click", ()=> { const b=$("gachaItemsBox")
   }
 })();
 
-$("createCampaignForm")?.addEventListener("submit",(e)=>{
-  e.preventDefault();
+/* ===== ★未入力なら作成ボタン押せない ===== */
+function validateCreateForm(){
+  const btn = $("createCampaignBtn");
+  const hint = $("createCampaignHint");
   const form = $("createCampaignForm");
-  if(!form) return;
+  if(!btn || !hint || !form) return;
 
   const fd = new FormData(form);
   const name = (fd.get("name")||"").toString().trim();
+  const start = (fd.get("start_date")||"").toString().trim();
+  const type = normalizeCampaignType((fd.get("type")||"achievement").toString());
+
+  let ok = true;
+  let msg = "";
+
+  if(!name){ ok=false; msg="企画名が未入力"; }
+  else if(!start){ ok=false; msg="開始日が未入力"; }
+  else if(type === "gacha"){
+    const single = Number(fd.get("g_singleCost")||0);
+    const items = $("gachaItemsBox") ? collectGachaItemsFrom($("gachaItemsBox")) : [];
+    if(!(Number.isFinite(single) && single > 0)){ ok=false; msg="ガチャ：1回の必要ptが未入力"; }
+    else if(items.length === 0){ ok=false; msg="ガチャ：景品が未入力"; }
+  }else{
+    // ルール：1行も完成してないならNG
+    const rules = $("rulesBox") ? collectRulesFrom($("rulesBox")) : [];
+    if(rules.length === 0){ ok=false; msg="返礼品（ポイント＋内容）を1つ以上入力"; }
+    // 途中入力（片方だけ）を検出
+    if(ok && $("rulesBox")){
+      const rows = $("rulesBox").querySelectorAll(".ruleRow");
+      for(const row of rows){
+        const th = (row.querySelector("[data-threshold]")?.value||"").toString().trim();
+        const rw = (row.querySelector("[data-reward]")?.value||"").toString().trim();
+        if((th && !rw) || (!th && rw)){
+          ok=false; msg="返礼品の行に未入力があります"; break;
+        }
+      }
+    }
+  }
+
+  btn.disabled = !ok;
+  hint.textContent = ok ? "" : msg;
+}
+
+// 入力で常に判定
+$("createCampaignForm")?.addEventListener("input", validateCreateForm);
+$("createCampaignForm")?.addEventListener("change", validateCreateForm);
+
+$("createCampaignForm")?.addEventListener("submit",(e)=>{
+  e.preventDefault();
+  validateCreateForm();
+  if($("createCampaignBtn")?.disabled) return;
+
+  const form = $("createCampaignForm");
+  const fd = new FormData(form);
+
+  const name = (fd.get("name")||"").toString().trim();
   const start_date = (fd.get("start_date")||"").toString().trim();
   const type = normalizeCampaignType((fd.get("type")||"achievement").toString());
-  if(!name || !start_date) return;
 
   const campaign = {
     id: uid(),
@@ -491,15 +520,14 @@ $("createCampaignForm")?.addEventListener("submit",(e)=>{
     $("createTypeSelect").value = "achievement";
     setCreateTypeUI("achievement");
   }
+  validateCreateForm();
   renderAll();
   toast("作成");
 });
 
 $("campaignSearch")?.addEventListener("input", renderCampaigns);
 
-/* =========================
-   Campaign list
-========================= */
+/* ===== Campaign list ===== */
 function deleteCampaign(campaignId){
   state.campaigns = state.campaigns.filter(x=>x.id!==campaignId);
   state.logs = state.logs.filter(x=>x.campaign_id!==campaignId);
@@ -570,9 +598,7 @@ function renderCampaigns(){
   });
 }
 
-/* =========================
-   Tasks list
-========================= */
+/* ===== Tasks list ===== */
 $("filterAllCampaigns")?.addEventListener("click", ()=>{ taskPageFilter="all"; renderTaskCampaignList(); });
 $("filterOpenCampaigns")?.addEventListener("click", ()=>{ taskPageFilter="open"; renderTaskCampaignList(); });
 $("filterDoneCampaigns")?.addEventListener("click", ()=>{ taskPageFilter="done"; renderTaskCampaignList(); });
@@ -615,9 +641,7 @@ function renderTaskCampaignList(){
   });
 }
 
-/* =========================
-   Reward rendering
-========================= */
+/* ===== Reward cells ===== */
 function renderRewardCell(campaign, listenerName, points){
   const type = normalizeCampaignType(campaign.type);
 
@@ -633,7 +657,7 @@ function renderRewardCell(campaign, listenerName, points){
     return `<div class="shopItems">${list.map(x=>`<span class="shopItemChip">${escapeHtml(`${x.cost}pt達成：${x.reward}`)}</span>`).join("")}</div>`;
   }
 
-  // shopping: 購入済み＋買える候補
+  // shopping
   const spent = totalPurchasedCost(campaign, listenerName);
   const remaining = Math.max(0, points - spent);
 
@@ -663,9 +687,7 @@ function renderRewardCell(campaign, listenerName, points){
   `;
 }
 
-/* =========================
-   Campaign confirm view
-========================= */
+/* ===== Campaign confirm ===== */
 function renderCampaign(){
   const c = getCurrentCampaign();
   if(!c){ location.hash="#tasks"; return; }
@@ -704,7 +726,6 @@ function renderCampaign(){
     `;
   }).join("");
 
-  // delivery
   body.querySelectorAll("[data-delivery]").forEach(sel=>{
     sel.addEventListener("change", ()=>{
       const name = sel.getAttribute("data-delivery");
@@ -714,7 +735,6 @@ function renderCampaign(){
     });
   });
 
-  // shopping purchase buttons inside reward cell
   if(normalizeCampaignType(c.type)==="shopping"){
     body.querySelectorAll("[data-buy]").forEach(btn=>{
       btn.addEventListener("click", ()=>{
@@ -738,13 +758,9 @@ function renderCampaign(){
       });
     });
   }
-
-  $("goConfirmBtn") && ($("goConfirmBtn").href = `#campaign=${c.id}`);
 }
 
-/* =========================
-   Live helpers
-========================= */
+/* ===== Live helpers ===== */
 function fillSelect(selectEl, options, selectedValue){
   if(!selectEl) return;
   const safe = options.map(x=>x.trim()).filter(Boolean);
@@ -758,7 +774,6 @@ function fillSelect(selectEl, options, selectedValue){
   selectEl.innerHTML = html;
   selectEl.value = (selected && safe.includes(selected)) ? selected : "";
 }
-
 function renderRewardList(c){
   const box = $("rewardListBox");
   if(!box) return;
@@ -805,7 +820,6 @@ function renderLiveTable(c){
     tr.addEventListener("click", ()=>{
       const name = tr.getAttribute("data-pick");
       setActiveListener(c.id, name);
-      // 入力欄に残す
       if($("addNameInput")) $("addNameInput").value = name;
       if($("listenerSelect")) $("listenerSelect").value = name;
       if($("gachaAddNameInput")) $("gachaAddNameInput").value = name;
@@ -875,9 +889,7 @@ function addNewListenerFromInput(inputId, selectId){
   toast("追加");
 }
 
-/* =========================
-   Gacha
-========================= */
+/* ===== Gacha ===== */
 function calcGachaPulls(pt, g){
   const singleCost = Math.max(0, Number(g.singleCost||0));
   const multiCost = Math.max(0, Number(g.multiCost||0));
@@ -956,9 +968,148 @@ function rollGacha(user, pt){
   toast("結果");
 }
 
-/* =========================
-   LIVE render + bindings
-========================= */
+/* ===== ★企画編集（ライブ画面） ===== */
+function clearEditBoxes(){
+  const rb = $("editRulesBox");
+  const gb = $("editGachaItemsBox");
+  if(rb) rb.innerHTML = "";
+  if(gb) gb.innerHTML = "";
+}
+function setEditTypeUI(type){
+  const isGacha = type === "gacha";
+  $("editRulesSection")?.classList.toggle("hidden", isGacha);
+  $("editGachaSection")?.classList.toggle("hidden", !isGacha);
+  validateEditCampaign();
+}
+function validateEditCampaign(){
+  const hint = $("editCampaignHint");
+  const saveBtn = $("saveEditCampaignBtn");
+  if(!hint || !saveBtn) return;
+
+  const name = ($("editCampName")?.value||"").toString().trim();
+  const start = ($("editCampStart")?.value||"").toString().trim();
+  const type = normalizeCampaignType(($("editCampType")?.value||"achievement").toString());
+
+  let ok = true;
+  let msg = "";
+
+  if(!name){ ok=false; msg="企画名が未入力"; }
+  else if(!start){ ok=false; msg="開始日が未入力"; }
+  else if(type === "gacha"){
+    const single = Number($("editGSingle")?.value||0);
+    const items = $("editGachaItemsBox") ? collectGachaItemsFrom($("editGachaItemsBox")) : [];
+    if(!(Number.isFinite(single) && single > 0)){ ok=false; msg="ガチャ：1回の必要ptが未入力"; }
+    else if(items.length === 0){ ok=false; msg="ガチャ：景品が未入力"; }
+  }else{
+    const rules = $("editRulesBox") ? collectRulesFrom($("editRulesBox")) : [];
+    if(rules.length === 0){ ok=false; msg="返礼品（ポイント＋内容）を1つ以上入力"; }
+    if(ok && $("editRulesBox")){
+      const rows = $("editRulesBox").querySelectorAll(".ruleRow");
+      for(const row of rows){
+        const th = (row.querySelector("[data-threshold]")?.value||"").toString().trim();
+        const rw = (row.querySelector("[data-reward]")?.value||"").toString().trim();
+        if((th && !rw) || (!th && rw)){
+          ok=false; msg="返礼品の行に未入力があります"; break;
+        }
+      }
+    }
+  }
+
+  hint.textContent = ok ? "" : msg;
+  saveBtn.disabled = !ok;
+}
+
+function openCampaignEdit(){
+  const c = getCurrentCampaign();
+  if(!c) return;
+
+  $("campaignEditPanel")?.classList.remove("hidden");
+  $("editCampName").value = c.name || "";
+  $("editCampStart").value = c.start_date || "";
+  $("editCampType").value = normalizeCampaignType(c.type);
+
+  clearEditBoxes();
+
+  if(normalizeCampaignType(c.type) === "gacha"){
+    ensureGacha(c);
+    $("editGSingle").value = String(c.gacha.singleCost || "");
+    $("editGMultiCost").value = String(c.gacha.multiCost || "");
+    $("editGMultiCount").value = String(c.gacha.multiCount || "");
+    const gb = $("editGachaItemsBox");
+    (c.gacha.items||[]).forEach(it=> addGachaRow(gb, it.name, it.rate));
+    setEditTypeUI("gacha");
+  }else{
+    const rb = $("editRulesBox");
+    (c.rules||[]).forEach(r=> addRuleRow(rb, r.threshold, r.reward));
+    setEditTypeUI(normalizeCampaignType(c.type));
+  }
+
+  // 入力監視
+  ["editCampName","editCampStart","editCampType","editGSingle","editGMultiCost","editGMultiCount"].forEach(id=>{
+    $(id)?.addEventListener("input", validateEditCampaign);
+    $(id)?.addEventListener("change", ()=>{
+      if(id==="editCampType") setEditTypeUI(normalizeCampaignType($("editCampType").value));
+      validateEditCampaign();
+    });
+  });
+
+  validateEditCampaign();
+}
+
+function closeCampaignEdit(){
+  $("campaignEditPanel")?.classList.add("hidden");
+}
+
+function saveCampaignEdit(){
+  const c = getCurrentCampaign();
+  if(!c) return;
+  validateEditCampaign();
+  if($("saveEditCampaignBtn")?.disabled) return;
+
+  const name = ($("editCampName")?.value||"").toString().trim();
+  const start = ($("editCampStart")?.value||"").toString().trim();
+  const type = normalizeCampaignType(($("editCampType")?.value||"achievement").toString());
+
+  c.name = name;
+  c.start_date = start;
+  c.type = type;
+
+  if(type === "gacha"){
+    c.rules = [];
+    c.gacha = {
+      singleCost: Number($("editGSingle")?.value||0),
+      multiCost: Number($("editGMultiCost")?.value||0),
+      multiCount: Number($("editGMultiCount")?.value||0),
+      items: $("editGachaItemsBox") ? collectGachaItemsFrom($("editGachaItemsBox")) : []
+    };
+    ensureGacha(c);
+  }else{
+    c.gacha = c.gacha || undefined; // 残っても害はないが一応
+    c.rules = $("editRulesBox") ? collectRulesFrom($("editRulesBox")) : [];
+  }
+
+  saveState();
+  toast("保存");
+  closeCampaignEdit();
+  renderAll();
+}
+
+/* edit panel buttons */
+$("editCampaignBtn")?.addEventListener("click", openCampaignEdit);
+$("cancelEditCampaignBtn")?.addEventListener("click", closeCampaignEdit);
+$("saveEditCampaignBtn")?.addEventListener("click", saveCampaignEdit);
+$("editAddRuleRowBtn")?.addEventListener("click", ()=>{
+  const rb = $("editRulesBox");
+  if(rb) addRuleRow(rb,"","");
+  validateEditCampaign();
+});
+$("editAddGachaRowBtn")?.addEventListener("click", ()=>{
+  const gb = $("editGachaItemsBox");
+  if(gb) addGachaRow(gb,"","");
+  validateEditCampaign();
+});
+
+/* ===== LIVE render ===== */
 function renderLive(){
   const c = getCurrentCampaign();
   if(!c){ location.hash="#tasks"; return; }
@@ -983,14 +1134,13 @@ function renderLive(){
   fillSelect($("listenerSelect"), names, active);
   fillSelect($("gachaListenerSelect"), names, active);
 
-  // active を入力欄に残す
   if(isGacha){
     if($("gachaAddNameInput") && active) $("gachaAddNameInput").value = active;
   }else{
     if($("addNameInput") && active) $("addNameInput").value = active;
   }
 
-  // 追加
+  // name add
   if($("addNameBtn")) $("addNameBtn").onclick = ()=> addNewListenerFromInput("addNameInput", "listenerSelect");
   if($("addNameInput")) $("addNameInput").onkeydown = (e)=>{ if(e.key==="Enter"){ e.preventDefault(); addNewListenerFromInput("addNameInput","listenerSelect"); } };
 
@@ -1019,7 +1169,6 @@ function renderLive(){
     };
   }
 
-  // clear
   if($("clearActiveBtn")){
     $("clearActiveBtn").onclick = ()=>{
       setActiveListener(c.id,"");
@@ -1030,7 +1179,6 @@ function renderLive(){
     };
   }
 
-  // add buttons
   document.querySelectorAll("[data-add]").forEach(btn=>{
     btn.onclick = ()=> addLog(parseInt(btn.getAttribute("data-add"),10));
   });
@@ -1089,9 +1237,7 @@ function renderLive(){
   }
 }
 
-/* =========================
-   renderAll + init
-========================= */
+/* ===== renderAll ===== */
 function renderAll(){
   renderHome();
   renderCampaigns();
@@ -1102,9 +1248,7 @@ function renderAll(){
   if(h.startsWith("#live=")) renderLive();
 }
 
-/* =========================
-   Backup / Restore
-========================= */
+/* ===== Backup / Restore ===== */
 $("exportBtn")?.addEventListener("click", ()=>{
   const blob = new Blob([JSON.stringify(state,null,2)], {type:"application/json"});
   const a = document.createElement("a");
@@ -1142,9 +1286,12 @@ $("importFile")?.addEventListener("change", async (e)=>{
   }
 });
 
-/* =========================
-   Init
-========================= */
-setCreateTypeUI($("createTypeSelect")?.value || "achievement");
+/* ===== Init ===== */
+function setCreateTypeUIInit(){
+  setCreateTypeUI($("createTypeSelect")?.value || "achievement");
+  validateCreateForm();
+}
+
+setCreateTypeUIInit();
 route();
 renderAll();
