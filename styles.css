@@ -331,3 +331,36 @@ body{
   border-color: rgba(70,192,139,.45);
   background: linear-gradient(135deg, #fff, rgba(191,241,218,.25));
 }
+
+
+/* ===== IRIAM calc (scoped) ===== */
+:root{--primary: #ff4500; --bg: #f8f9fa;}
+body{font-family: -apple-system, sans-serif; background: var(--bg); margin: 0; padding: 10px; color: #333; font-size: 13px;}
+#view-iriam .container{max-width: 900px; margin: 0 auto;}
+#view-iriam .card{background: white; border-radius: 12px; padding: 15px; box-shadow: 0 4px 10px rgba(0,0,0,0.1); margin-bottom: 15px;}
+#view-iriam h1{color: var(--primary); font-size: 1.1rem; text-align: center; margin: 0 0 15px 0;}
+#view-iriam .setup-grid{display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 10px; background: #fff5f0; padding: 15px; border-radius: 10px;}
+#view-iriam .setup-grid div{display: flex; flex-direction: column;}
+#view-iriam label{font-size: 0.75rem; color: #666; margin-bottom: 3px; font-weight: bold;}
+#view-iriam .note{font-size: 0.65rem; color: #999; font-weight: normal; margin-top: 2px;}
+#view-iriam input, #view-iriam select{padding: 8px; border: 1px solid #ddd; border-radius: 6px; font-size: 0.9rem; background: white; width: 100%; box-sizing: border-box;}
+#view-iriam .exec-btn{width: 100%; padding: 15px; background: var(--primary); color: white; border: none; border-radius: 10px; font-weight: bold; font-size: 1.1rem; cursor: pointer; margin: 15px 0; box-shadow: 0 4px 0 #cc3700;}
+#view-iriam .exec-btn:active{transform: translateY(2px); box-shadow: 0 2px 0 #cc3700;}
+#view-iriam .status-bar{display: flex; justify-content: space-between; align-items: center; background: #333; color: white; padding: 10px 15px; border-radius: 8px; margin-bottom: 15px;}
+#view-iriam .status-bar span{font-weight: bold; color: #ffeb3b;}
+#view-iriam .today-label{font-size: 0.7rem; color: #aaa; margin-right: 5px;}
+#view-iriam .table-wrapper{overflow-x: auto; border: 1px solid #eee; border-radius: 8px;}
+#view-iriam table{width: 100%; border-collapse: collapse; min-width: 700px; background: white;}
+#view-iriam th{background: #f2f2f2; position: sticky; top: 0; z-index: 5; font-size: 0.75rem;}
+#view-iriam th, #view-iriam td{border: 1px solid #eee; padding: 8px 5px; text-align: center;}
+#view-iriam .score-select{padding: 4px; border: 1px solid #ccc; border-radius: 4px; font-size: 0.9rem; cursor: pointer; background: #fff; width: auto;}
+#view-iriam .pass-chk{transform: scale(1.2); cursor: pointer;}
+#view-iriam /* チェックボックスが無効の時の見た目 */
+        .pass-chk:disabled{cursor: not-allowed; opacity: 0.3;}
+#view-iriam .up{background: #fff5f5; color: #e53e3e; font-weight: bold;}
+#view-iriam .down{background: #ebf8ff; color: #3182ce;}
+#view-iriam .keep{background: #f0fff4; color: #38a169;}
+#view-iriam .pass-row{background: #f9f9f9 !important; color: #999;}
+#view-iriam .tuesday{border-left: 5px solid #ff4500;}
+#view-iriam .today-highlight{background-color: #fffde7 !important; outline: 2px solid #fbc02d;}
+#view-iriam .summary-text{font-size: 0.7rem; color: #999; text-align: center; margin-top: 10px;}

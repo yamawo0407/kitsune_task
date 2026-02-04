@@ -256,7 +256,7 @@ const views = {
 
 function setActiveNav(viewName){
   document.querySelectorAll(".navlink").forEach(a=>a.classList.remove("active"));
-  const map = { home:"home", tasks:"tasks", campaigns:"campaigns", campaign:"tasks", live:"tasks" };
+  const map = { home:"home", tasks:"tasks", campaigns:"campaigns", campaign:"tasks", live:"tasks", iriam:"iriam" };
   const key = map[viewName] || "home";
   const el = document.querySelector(`.navlink[data-nav="${key}"]`);
   if(el) el.classList.add("active");
@@ -320,7 +320,13 @@ function route(){
     return;
   }
 
-  showView("home");
+  
+  if(path === "iriam"){
+    showView("iriam");
+    renderIriam();
+    return;
+  }
+showView("home");
   renderHome();
 }
 window.addEventListener("hashchange", ()=>{ route(); renderAll(); });
@@ -1341,6 +1347,192 @@ $("importFile")?.addEventListener("change", async (e)=>{
     e.target.value = "";
   }
 });
+
+
+
+/* ===== IRIAM calc (integrated) ===== */
+const IRIAM_STORAGE_KEY = "unified_iriam_v1";
+let __iriamInited = false;
+function notifyIriam(msg){ try{ if(typeof toast === 'function'){ toast(msg); return; } }catch{} alert(msg); }
+function initIriam(){
+  if(__iriamInited) return;
+  __iriamInited = true;
+const plusSelect = document.getElementById('init-plus');
+        for(let i=0; i<=17; i++) {
+            let opt = document.createElement('option');
+            opt.value = i; opt.innerText = i;
+            plusSelect.appendChild(opt);
+        }
+        const passSelect = document.getElementById('init-pass');
+        for(let i=0; i<=10; i++) {
+            let opt = document.createElement('option');
+            opt.value = i; opt.innerText = i + " 枚";
+            passSelect.appendChild(opt);
+        }
+
+        const todayObj = new Date();
+        const todayStr = todayObj.getFullYear() + '-' + ('0' + (todayObj.getMonth() + 1)).slice(-2) + '-' + ('0' + todayObj.getDate()).slice(-2);
+        
+        renderTable(); 
+        loadData();    
+        
+        if(!document.getElementById('start-date').value) {
+            document.getElementById('start-date').value = todayStr;
+        }
+        
+        runSim();
+}
+function renderIriam(){ initIriam(); }
+/* ---- original IRIAM logic (with storage key replaced) ---- */
+
+    const RANKS = ["D", "C1", "C2", "C3", "C4", "C5", "B1", "B2", "B3", "A1", "A2", "A3", "S1", "S2", "S3"];
+    const DAYS_LIMIT = 60;
+
+    function renderTable() {
+        const tbody = document.getElementById('table-body');
+        tbody.innerHTML = "";
+        for (let i = 0; i < DAYS_LIMIT; i++) {
+            let tr = document.createElement('tr');
+            tr.id = `row-${i}`;
+            tr.innerHTML = `
+                <td id="date-${i}"></td>
+                <td id="rank-${i}"></td>
+                <td id="days-${i}"></td>
+                <td>
+                    <select class="score-select" id="score-${i}" onchange="runSim()">
+                        <option value="1">1</option><option value="2">2</option>
+                        <option value="4">4</option><option value="6">6</option>
+                        <option value="0">0</option>
+                    </select>
+                </td>
+                <td><input type="checkbox" class="pass-chk" id="pass-${i}" onchange="runSim()"></td>
+                <td id="total-${i}"></td>
+                <td id="status-${i}"></td>
+                <td id="passcnt-${i}"></td>
+            `;
+            tbody.appendChild(tr);
+        }
+    }
+
+    function runSim() {
+        let curRank = document.getElementById('init-rank').value;
+        let dayRem = parseInt(document.getElementById('init-days').value);
+        let totalPlus = parseInt(document.getElementById('init-plus').value);
+        let passHold = parseInt(document.getElementById('init-pass').value);
+        let startDateInput = document.getElementById('start-date').value;
+        let startDate = startDateInput ? new Date(startDateInput) : new Date();
+        
+        const now = new Date();
+        const todayStr = (now.getMonth()+1) + "/" + now.getDate();
+        let todayPassCount = "期間外";
+        document.getElementById('today-date-display').innerText = `(${todayStr})`;
+
+        for (let i = 0; i < DAYS_LIMIT; i++) {
+            let d = new Date(startDate);
+            d.setDate(startDate.getDate() + i);
+            let dayOfWeek = d.getDay(); 
+            let dateKey = (d.getMonth()+1) + "/" + d.getDate();
+            let dateStr = dateKey + `(${['日','月','火','水','木','金','土'][dayOfWeek]})`;
+            
+            if (dayOfWeek === 1 && i !== 0) {
+                passHold = Math.min(10, passHold + 1);
+            }
+
+            let passEl = document.getElementById(`pass-${i}`);
+            
+            // パスを持っていない場合はチェックボックスを無効化（ただし既にチェック済みの場合は許可）
+            if (passHold <= 0 && !passEl.checked) {
+                passEl.disabled = true;
+            } else {
+                passEl.disabled = false;
+            }
+
+            let isPass = passEl.checked;
+            let dailyScore = parseInt(document.getElementById(`score-${i}`).value) || 0;
+            let status = "-";
+            let isEnd = false;
+
+            const dateCell = document.getElementById(`date-${i}`);
+            const row = document.getElementById(`row-${i}`);
+            dateCell.innerText = dateStr;
+            
+            if (dateKey === todayStr) {
+                row.classList.add('today-highlight');
+                todayPassCount = passHold; 
+            } else {
+                row.classList.remove('today-highlight');
+            }
+
+            if (dayOfWeek === 2) { dateCell.className = "tuesday"; } else { dateCell.className = ""; }
+
+            if (isPass) {
+                status = "SKIP";
+                passHold = Math.max(0, passHold - 1);
+                row.classList.add("pass-row");
+            } else {
+                totalPlus += dailyScore;
+                row.classList.remove("pass-row");
+                if (totalPlus >= 18) { status = "アップ"; isEnd = true; }
+                else if (dayRem <= 0) { status = (totalPlus >= 12) ? "キープ" : "ダウン"; isEnd = true; }
+            }
+
+            document.getElementById(`rank-${i}`).innerText = curRank;
+            document.getElementById(`days-${i}`).innerText = isPass ? "-" : `${dayRem}日`;
+            document.getElementById(`total-${i}`).innerText = isPass ? "-" : totalPlus;
+            let sCell = document.getElementById(`status-${i}`);
+            sCell.innerText = status;
+            sCell.className = (status==="アップ")?"up":(status==="ダウン")?"down":(status==="キープ")?"keep":"";
+            document.getElementById(`passcnt-${i}`).innerText = `${passHold}枚`;
+
+            if (!isPass) {
+                if (isEnd) {
+                    let idx = RANKS.indexOf(curRank);
+                    if (status === "アップ" && idx < RANKS.length-1) curRank = RANKS[idx+1];
+                    else if (status === "ダウン" && idx > 0) curRank = RANKS[idx-1];
+                    totalPlus = 0; dayRem = 6;
+                } else {
+                    dayRem--;
+                }
+            }
+        }
+        document.getElementById('current-pass-display').innerText = todayPassCount;
+    }
+
+    function saveAndRefresh() {
+        runSim();
+        let scores = []; let passes = [];
+        for(let i=0; i<60; i++){
+            scores.push(document.getElementById(`score-${i}`).value);
+            passes.push(document.getElementById(`pass-${i}`).checked);
+        }
+        let data = {
+            rank: document.getElementById('init-rank').value,
+            days: document.getElementById('init-days').value,
+            plus: document.getElementById('init-plus').value,
+            pass: document.getElementById('init-pass').value,
+            start: document.getElementById('start-date').value,
+            scores: scores, passes: passes
+        };
+        localStorage.setItem(IRIAM_STORAGE_KEY, JSON.stringify(data));
+        notifyIriam("実行しました。入力を保存しました。");
+    }
+
+    function loadData() {
+        let raw = localStorage.getItem(IRIAM_STORAGE_KEY);
+        if (!raw) return;
+        let d = JSON.parse(raw);
+        document.getElementById('init-rank').value = d.rank;
+        document.getElementById('init-days').value = d.days;
+        document.getElementById('init-plus').value = d.plus;
+        document.getElementById('init-pass').value = d.pass;
+        if(d.start) document.getElementById('start-date').value = d.start;
+        for(let i=0; i<60; i++){
+            if(d.scores && d.scores[i] !== undefined) document.getElementById(`score-${i}`).value = d.scores[i];
+            if(d.passes && d.passes[i] !== undefined) document.getElementById(`pass-${i}`).checked = d.passes[i];
+        }
+    }
+
+
 
 /* ===== Init ===== */
 function setCreateTypeUIInit(){
