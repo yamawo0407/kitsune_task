@@ -334,8 +334,9 @@ body{
 
 
 /* ===== IRIAM calc (scoped) ===== */
-:root{--primary: #ff4500; --bg: #f8f9fa;}
-body{font-family: -apple-system, sans-serif; background: var(--bg); margin: 0; padding: 10px; color: #333; font-size: 13px;}
+#view-iriam{--primary:#ff4500; --bg:#f8f9fa; color:#333; font-size:13px;}
+#view-iriam{font-family:-apple-system, sans-serif; background:var(--bg); padding:10px;}
+
 #view-iriam .container{max-width: 900px; margin: 0 auto;}
 #view-iriam .card{background: white; border-radius: 12px; padding: 15px; box-shadow: 0 4px 10px rgba(0,0,0,0.1); margin-bottom: 15px;}
 #view-iriam h1{color: var(--primary); font-size: 1.1rem; text-align: center; margin: 0 0 15px 0;}
