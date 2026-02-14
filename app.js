@@ -17,7 +17,7 @@ function toast(msg){
 }
 
 /* ===== Utils ===== */
-const STORAGE_KEY = "reward_task_manager_v24";
+const STORAGE_KEY = "reward_task_manager_v25";
 
 function uid(){ return Math.random().toString(16).slice(2) + Date.now().toString(16); }
 function escapeHtml(s){
@@ -433,7 +433,7 @@ $("addGachaRowBtn")?.addEventListener("click", ()=> { const b=$("gachaItemsBox")
   }
 })();
 
-/* ===== ★未入力なら作成ボタン押せない ===== */
+/* ===== Create validation ===== */
 function validateCreateForm(){
   const btn = $("createCampaignBtn");
   const hint = $("createCampaignHint");
@@ -456,10 +456,8 @@ function validateCreateForm(){
     if(!(Number.isFinite(single) && single > 0)){ ok=false; msg="ガチャ：1回の必要ptが未入力"; }
     else if(items.length === 0){ ok=false; msg="ガチャ：景品が未入力"; }
   }else{
-    // ルール：1行も完成してないならNG
     const rules = $("rulesBox") ? collectRulesFrom($("rulesBox")) : [];
     if(rules.length === 0){ ok=false; msg="返礼品（ポイント＋内容）を1つ以上入力"; }
-    // 途中入力（片方だけ）を検出
     if(ok && $("rulesBox")){
       const rows = $("rulesBox").querySelectorAll(".ruleRow");
       for(const row of rows){
@@ -476,7 +474,6 @@ function validateCreateForm(){
   hint.textContent = ok ? "" : msg;
 }
 
-// 入力で常に判定
 $("createCampaignForm")?.addEventListener("input", validateCreateForm);
 $("createCampaignForm")?.addEventListener("change", validateCreateForm);
 
@@ -737,7 +734,8 @@ function renderCampaign(){
 
   if(normalizeCampaignType(c.type)==="shopping"){
     body.querySelectorAll("[data-buy]").forEach(btn=>{
-      btn.addEventListener("click", ()=>{
+      btn.addEventListener("click", (e)=>{
+        e.stopPropagation();
         const tr = btn.closest("tr");
         const name = tr?.querySelector("td")?.textContent?.trim();
         if(!name) return;
@@ -749,7 +747,8 @@ function renderCampaign(){
       });
     });
     body.querySelectorAll("[data-undo-buy]").forEach(btn=>{
-      btn.addEventListener("click", ()=>{
+      btn.addEventListener("click", (e)=>{
+        e.stopPropagation();
         const tr = btn.closest("tr");
         const name = tr?.querySelector("td")?.textContent?.trim();
         if(!name) return;
@@ -799,6 +798,7 @@ function renderRewardList(c){
     : `<div class="muted">返礼品なし</div>`;
 }
 
+/* ===== ★ここが修正ポイント：ライブ画面でも買える ===== */
 function renderLiveTable(c){
   const tbody = $("liveLeaderboardBody");
   if(!tbody) return;
@@ -808,6 +808,7 @@ function renderLiveTable(c){
     tbody.innerHTML = `<tr><td colspan="3" class="muted">データなし</td></tr>`;
     return;
   }
+
   tbody.innerHTML = totals.map(r=>`
     <tr data-pick="${escapeHtml(r.listener_name)}" style="cursor:pointer;">
       <td>${escapeHtml(r.listener_name)}</td>
@@ -816,8 +817,10 @@ function renderLiveTable(c){
     </tr>
   `).join("");
 
+  // 行タップ：リスナー選択（ボタン押下時は無視）
   tbody.querySelectorAll("[data-pick]").forEach(tr=>{
-    tr.addEventListener("click", ()=>{
+    tr.addEventListener("click", (e)=>{
+      if(e.target.closest("button")) return;
       const name = tr.getAttribute("data-pick");
       setActiveListener(c.id, name);
       if($("addNameInput")) $("addNameInput").value = name;
@@ -828,6 +831,34 @@ function renderLiveTable(c){
       renderLive();
     });
   });
+
+  // ★ shopping: 買う / 戻す のイベントをライブでも付与
+  if(normalizeCampaignType(c.type) === "shopping"){
+    tbody.querySelectorAll("[data-buy]").forEach(btn=>{
+      btn.addEventListener("click", (e)=>{
+        e.stopPropagation();
+        const tr = btn.closest("tr");
+        const name = tr?.getAttribute("data-pick") || tr?.querySelector("td")?.textContent?.trim();
+        if(!name) return;
+        const cost = Number(btn.getAttribute("data-buy")||0);
+        const reward = btn.getAttribute("data-buyname")||"";
+        addPurchase(c, name, cost, reward);
+        toast("購入");
+        renderAll();
+      });
+    });
+
+    tbody.querySelectorAll("[data-undo-buy]").forEach(btn=>{
+      btn.addEventListener("click", (e)=>{
+        e.stopPropagation();
+        const tr = btn.closest("tr");
+        const name = tr?.getAttribute("data-pick") || tr?.querySelector("td")?.textContent?.trim();
+        if(!name) return;
+        if(undoPurchase(c, name)) toast("戻す");
+        renderAll();
+      });
+    });
+  }
 }
 
 function addLog(delta){
@@ -880,7 +911,6 @@ function addNewListenerFromInput(inputId, selectId){
   addListenerToPool(c.id, name);
   setActiveListener(c.id, name);
 
-  // 入力欄は消さない
   if(input) input.value = name;
 
   saveState();
@@ -940,7 +970,6 @@ function rollGacha(user, pt){
     results.push(pickGachaItem(c.gacha.items || []) ?? "（景品未設定）");
   }
 
-  // ptは加算ログ
   state.logs.push({
     id: uid(),
     campaign_id: c.id,
@@ -951,7 +980,6 @@ function rollGacha(user, pt){
 
   addGachaResult(c.id, user, pt, results);
 
-  // 表示：番号なし、使用ptは出さない、被りは×n
   const count = new Map();
   for(const r of results) count.set(r, (count.get(r) || 0) + 1);
   const lines = Array.from(count.entries())
@@ -968,7 +996,7 @@ function rollGacha(user, pt){
   toast("結果");
 }
 
-/* ===== ★企画編集（ライブ画面） ===== */
+/* ===== Campaign edit in live ===== */
 function clearEditBoxes(){
   const rb = $("editRulesBox");
   const gb = $("editGachaItemsBox");
@@ -1018,7 +1046,6 @@ function validateEditCampaign(){
   hint.textContent = ok ? "" : msg;
   saveBtn.disabled = !ok;
 }
-
 function openCampaignEdit(){
   const c = getCurrentCampaign();
   if(!c) return;
@@ -1044,37 +1071,22 @@ function openCampaignEdit(){
     setEditTypeUI(normalizeCampaignType(c.type));
   }
 
-  // 入力監視
-  ["editCampName","editCampStart","editCampType","editGSingle","editGMultiCost","editGMultiCount"].forEach(id=>{
-    $(id)?.addEventListener("input", validateEditCampaign);
-    $(id)?.addEventListener("change", ()=>{
-      if(id==="editCampType") setEditTypeUI(normalizeCampaignType($("editCampType").value));
-      validateEditCampaign();
-    });
-  });
-
   validateEditCampaign();
 }
-
 function closeCampaignEdit(){
   $("campaignEditPanel")?.classList.add("hidden");
 }
-
 function saveCampaignEdit(){
   const c = getCurrentCampaign();
   if(!c) return;
   validateEditCampaign();
   if($("saveEditCampaignBtn")?.disabled) return;
 
-  const name = ($("editCampName")?.value||"").toString().trim();
-  const start = ($("editCampStart")?.value||"").toString().trim();
-  const type = normalizeCampaignType(($("editCampType")?.value||"achievement").toString());
+  c.name = ($("editCampName")?.value||"").toString().trim();
+  c.start_date = ($("editCampStart")?.value||"").toString().trim();
+  c.type = normalizeCampaignType(($("editCampType")?.value||"achievement").toString());
 
-  c.name = name;
-  c.start_date = start;
-  c.type = type;
-
-  if(type === "gacha"){
+  if(c.type === "gacha"){
     c.rules = [];
     c.gacha = {
       singleCost: Number($("editGSingle")?.value||0),
@@ -1084,7 +1096,6 @@ function saveCampaignEdit(){
     };
     ensureGacha(c);
   }else{
-    c.gacha = c.gacha || undefined; // 残っても害はないが一応
     c.rules = $("editRulesBox") ? collectRulesFrom($("editRulesBox")) : [];
   }
 
@@ -1094,7 +1105,6 @@ function saveCampaignEdit(){
   renderAll();
 }
 
-/* edit panel buttons */
 $("editCampaignBtn")?.addEventListener("click", openCampaignEdit);
 $("cancelEditCampaignBtn")?.addEventListener("click", closeCampaignEdit);
 $("saveEditCampaignBtn")?.addEventListener("click", saveCampaignEdit);
@@ -1107,6 +1117,9 @@ $("editAddGachaRowBtn")?.addEventListener("click", ()=>{
   const gb = $("editGachaItemsBox");
   if(gb) addGachaRow(gb,"","");
   validateEditCampaign();
+});
+$("editCampType")?.addEventListener("change", ()=>{
+  setEditTypeUI(normalizeCampaignType($("editCampType").value));
 });
 
 /* ===== LIVE render ===== */
@@ -1140,14 +1153,12 @@ function renderLive(){
     if($("addNameInput") && active) $("addNameInput").value = active;
   }
 
-  // name add
   if($("addNameBtn")) $("addNameBtn").onclick = ()=> addNewListenerFromInput("addNameInput", "listenerSelect");
   if($("addNameInput")) $("addNameInput").onkeydown = (e)=>{ if(e.key==="Enter"){ e.preventDefault(); addNewListenerFromInput("addNameInput","listenerSelect"); } };
 
   if($("gachaAddNameBtn")) $("gachaAddNameBtn").onclick = ()=> addNewListenerFromInput("gachaAddNameInput", "gachaListenerSelect");
   if($("gachaAddNameInput")) $("gachaAddNameInput").onkeydown = (e)=>{ if(e.key==="Enter"){ e.preventDefault(); addNewListenerFromInput("gachaAddNameInput","gachaListenerSelect"); } };
 
-  // select sync
   if($("listenerSelect")){
     $("listenerSelect").onchange = ()=>{
       const n = ($("listenerSelect").value||"").trim();
@@ -1203,7 +1214,6 @@ function renderLive(){
 
   if($("undoBtn")) $("undoBtn").onclick = ()=> undoLastLog();
 
-  // gacha
   if(isGacha){
     if($("gachaRollBtn")){
       $("gachaRollBtn").onclick = ()=>{
