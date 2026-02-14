@@ -325,6 +325,7 @@ body{
   color: var(--muted);
   box-shadow: var(--shadow);
 }
+
 /* 企画編集パネルの視認性 */
 #campaignEditPanel{
   border-color: rgba(70,192,139,.45);
