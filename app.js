@@ -39,9 +39,13 @@ function loadState(){
       gacha_history: (s.gacha_history && typeof s.gacha_history === "object") ? s.gacha_history : {},
       listener_pool: (s.listener_pool && typeof s.listener_pool === "object") ? s.listener_pool : {},
       active_listener: (s.active_listener && typeof s.active_listener === "object") ? s.active_listener : {},
+      notes: (s.notes && typeof s.notes === "object") ? s.notes : {},
     };
   }catch{
-    return { campaigns: [], logs: [], delivery: {}, purchases: {}, gacha_history: {}, listener_pool: {}, active_listener:{} };
+    return {
+      campaigns: [], logs: [], delivery: {}, purchases: {}, gacha_history: {},
+      listener_pool: {}, active_listener:{}, notes:{}
+    };
   }
 }
 let state = loadState();
@@ -72,6 +76,7 @@ function migrate(){
   state.gacha_history ||= {};
   state.listener_pool ||= {};
   state.active_listener ||= {};
+  state.notes ||= {};
 }
 migrate(); saveState();
 
@@ -124,6 +129,23 @@ function campaignSortDesc(a,b){
   const ac = a.created_at || "";
   const bc = b.created_at || "";
   return bc.localeCompare(ac);
+}
+
+/* ===== Notes (備考) ===== */
+function getNotesMap(campaignId){
+  if(!state.notes[campaignId] || typeof state.notes[campaignId] !== "object"){
+    state.notes[campaignId] = {};
+  }
+  return state.notes[campaignId];
+}
+function getNote(campaignId, listenerName){
+  const m = getNotesMap(campaignId);
+  return (m[listenerName] || "").toString();
+}
+function setNote(campaignId, listenerName, text){
+  const m = getNotesMap(campaignId);
+  m[listenerName] = (text || "").toString();
+  saveState();
 }
 
 /* ===== Listener pool ===== */
@@ -533,6 +555,7 @@ function deleteCampaign(campaignId){
   delete state.gacha_history[campaignId];
   delete state.listener_pool[campaignId];
   delete state.active_listener[campaignId];
+  delete state.notes[campaignId];
   saveState();
 }
 
@@ -670,7 +693,12 @@ function renderRewardCell(campaign, listenerName, points){
 
   const can = rules.filter(r=>remaining>=r.threshold);
   const canHtml = can.length
-    ? `<div class="shopItems">${can.map(r=>`<button class="btn small ghost" data-buy="${r.threshold}" data-buyname="${escapeHtml(r.reward)}">買う</button>`).join(" ")}</div>`
+    ? `<div class="shopItems">${
+        can.map(r=>{
+          const label = `${r.reward}（${r.threshold}pt）`;
+          return `<button class="btn small ghost" data-buy="${r.threshold}" data-buyname="${escapeHtml(r.reward)}">${escapeHtml(label)}</button>`;
+        }).join(" ")
+      }</div>`
     : `<div class="muted">—</div>`;
 
   return `
@@ -702,7 +730,7 @@ function renderCampaign(){
 
   const totals = computeTotalsForCampaign(c.id);
   if(!totals.length){
-    body.innerHTML = `<tr><td colspan="4" class="muted">データなし</td></tr>`;
+    body.innerHTML = `<tr><td colspan="5" class="muted">データなし</td></tr>`;
     return;
   }
 
@@ -719,6 +747,9 @@ function renderCampaign(){
             <option value="done" ${status==="done"?"selected":""}>完了</option>
           </select>
         </td>
+        <td>
+          <input class="input" data-note="${escapeHtml(r.listener_name)}" value="${escapeHtml(getNote(c.id, r.listener_name))}" />
+        </td>
       </tr>
     `;
   }).join("");
@@ -729,6 +760,13 @@ function renderCampaign(){
       setDeliveryStatus(c.id, name, sel.value);
       toast("更新");
       renderAll();
+    });
+  });
+
+  body.querySelectorAll("[data-note]").forEach(inp=>{
+    inp.addEventListener("input", ()=>{
+      const name = inp.getAttribute("data-note");
+      setNote(c.id, name, inp.value);
     });
   });
 
@@ -798,7 +836,7 @@ function renderRewardList(c){
     : `<div class="muted">返礼品なし</div>`;
 }
 
-/* ===== ★ここが修正ポイント：ライブ画面でも買える ===== */
+/* ===== Live table (shopping can buy here) ===== */
 function renderLiveTable(c){
   const tbody = $("liveLeaderboardBody");
   if(!tbody) return;
@@ -832,7 +870,7 @@ function renderLiveTable(c){
     });
   });
 
-  // ★ shopping: 買う / 戻す のイベントをライブでも付与
+  // shopping: 買う / 戻す
   if(normalizeCampaignType(c.type) === "shopping"){
     tbody.querySelectorAll("[data-buy]").forEach(btn=>{
       btn.addEventListener("click", (e)=>{
@@ -1283,6 +1321,7 @@ $("importFile")?.addEventListener("change", async (e)=>{
       gacha_history: (obj.gacha_history && typeof obj.gacha_history === "object") ? obj.gacha_history : {},
       listener_pool: (obj.listener_pool && typeof obj.listener_pool === "object") ? obj.listener_pool : {},
       active_listener: (obj.active_listener && typeof obj.active_listener === "object") ? obj.active_listener : {},
+      notes: (obj.notes && typeof obj.notes === "object") ? obj.notes : {},
     };
     migrate();
     saveState();
@@ -1301,7 +1340,6 @@ function setCreateTypeUIInit(){
   setCreateTypeUI($("createTypeSelect")?.value || "achievement");
   validateCreateForm();
 }
-
 setCreateTypeUIInit();
 route();
 renderAll();
