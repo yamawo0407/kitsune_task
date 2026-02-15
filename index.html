@@ -173,6 +173,23 @@
               <div></div>
             </div>
 
+            <div class="card" style="padding:12px; box-shadow:none;">
+              <div class="card-head" style="margin-bottom:6px;">
+                <div class="card-title">初回特典（リスナーごとに初回1回だけ）</div>
+              </div>
+              <div class="grid2">
+                <label class="field">
+                  <span>初回無料回数（回）</span>
+                  <input class="input" type="number" min="0" step="1" name="g_firstFreePulls" placeholder="例：10（初回10連無料）" />
+                </label>
+                <label class="field">
+                  <span>初回無料pt換算（pt）</span>
+                  <input class="input" type="number" min="0" step="1" name="g_firstFreePt" placeholder="例：3000（初回3000pt分無料）" />
+                </label>
+              </div>
+              <div class="muted">※両方入れた場合は「回数」を優先。</div>
+            </div>
+
             <div class="ruleHead">
               <div class="card-title">景品（出現率%）</div>
               <button id="addGachaRowBtn" type="button" class="btn ghost">＋行を追加</button>
@@ -217,6 +234,7 @@
             <th class="right">合計pt</th>
             <th class="center">返礼品</th>
             <th>状況</th>
+            <th>備考</th>
           </tr>
         </thead>
         <tbody id="leaderboardBody"></tbody>
@@ -297,6 +315,23 @@
             <div></div>
           </div>
 
+          <div class="card" style="padding:12px; box-shadow:none;">
+            <div class="card-head" style="margin-bottom:6px;">
+              <div class="card-title">初回特典（リスナーごとに初回1回だけ）</div>
+            </div>
+            <div class="grid2">
+              <label class="field">
+                <span>初回無料回数（回）</span>
+                <input id="editGFirstPulls" class="input" type="number" min="0" step="1" />
+              </label>
+              <label class="field">
+                <span>初回無料pt換算（pt）</span>
+                <input id="editGFirstPt" class="input" type="number" min="0" step="1" />
+              </label>
+            </div>
+            <div class="muted">※両方入れた場合は「回数」を優先。</div>
+          </div>
+
           <div class="ruleHead">
             <div class="card-title">景品（出現率%）</div>
             <button id="editAddGachaRowBtn" type="button" class="btn ghost">＋行を追加</button>
@@ -333,11 +368,12 @@
 
         <label class="field">
           <span>使用pt</span>
-          <input id="gachaPtInput" class="input" type="number" min="0" step="1" placeholder="例：3000" />
+          <input id="gachaPtInput" class="input" type="number" min="0" step="1" placeholder="例：3000（初回特典なら0でも可）" />
         </label>
 
         <div class="row gap wrapBtns">
           <button id="gachaRollBtn" class="btn primary" type="button">回す</button>
+          <button id="gachaFreeRollBtn" class="btn ghost" type="button">無料で1回</button>
           <button id="gachaCopyBtn" class="btn ghost" type="button">コピー</button>
         </div>
 
