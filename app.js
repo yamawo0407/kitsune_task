@@ -17,7 +17,7 @@ function toast(msg){
 }
 
 /* ===== Utils ===== */
-const STORAGE_KEY = "reward_task_manager_v30";
+const STORAGE_KEY = "reward_task_manager_v31";
 function uid(){ return Math.random().toString(16).slice(2) + Date.now().toString(16); }
 function escapeHtml(s){
   return (s ?? "").toString().replace(/[&<>"']/g,(c)=>({
@@ -235,6 +235,10 @@ function getGachaList(campaignId, listenerName){
 }
 function hasGachaEver(campaignId, listenerName){
   return getGachaList(campaignId, listenerName).length > 0;
+}
+function hasUsedFirstPricing(campaignId, listenerName){
+  const list = getGachaList(campaignId, listenerName);
+  return list.some(x => x?.meta?.usedFirstPricing === true);
 }
 function addGachaResult(campaignId, listenerName, ptUsed, results, meta){
   const list = getGachaList(campaignId, listenerName);
@@ -1023,7 +1027,7 @@ function pickGachaItem(items){
 /**
  * paidPt: 入力pt（0可）
  * opts:
- *  - forceFirstPricing: true => 初回単価で回数計算（※呼び出し側で「初回のみ」制御）
+ *  - forceFirstPricing: true => 初回単価で回数計算（※「初回単価を使ったことが無い」ならOK）
  *  - forceFreeOne: true => 無料で1回
  */
 function rollGacha(user, paidPt, opts={}){
@@ -1032,11 +1036,9 @@ function rollGacha(user, paidPt, opts={}){
   ensureGacha(c);
 
   const paid = Math.max(0, Number(paidPt||0));
-  const isFirst = !hasGachaEver(c.id, user);
-
   const useFirstPricing = !!opts.forceFirstPricing;
-  const calc = useFirstPricing ? calcGachaPullsFirst(paid, c.gacha) : calcGachaPullsNormal(paid, c.gacha);
 
+  const calc = useFirstPricing ? calcGachaPullsFirst(paid, c.gacha) : calcGachaPullsNormal(paid, c.gacha);
   const freeOne = opts.forceFreeOne ? 1 : 0;
   const totalPulls = calc.total + freeOne;
 
@@ -1065,7 +1067,6 @@ function rollGacha(user, paidPt, opts={}){
   }
 
   addGachaResult(c.id, user, paid, results, {
-    isFirst,
     usedFirstPricing: useFirstPricing,
     freeOne
   });
@@ -1080,8 +1081,7 @@ function rollGacha(user, paidPt, opts={}){
 
   const noteLines = [];
   if(paid > 0){
-    if(useFirstPricing) noteLines.push(`初回単価（1回${calc.unit}pt）`);
-    else noteLines.push(`通常単価`);
+    noteLines.push(useFirstPricing ? `初回単価` : `通常単価`);
   }
   if(freeOne > 0) noteLines.push(`無料1回`);
   const note = noteLines.length ? `（${noteLines.join(" / ")}）` : "";
@@ -1317,6 +1317,7 @@ function renderLive(){
 
     const selectedUser = ($("gachaListenerSelect")?.value || "").trim();
     const eligibleCb = $("gachaEligibleCheckbox");
+    const ptInput = $("gachaPtInput");
 
     if(eligibleCb){
       eligibleCb.disabled = !selectedUser;
@@ -1330,42 +1331,57 @@ function renderLive(){
       };
     }
 
-    // 通常「回す」＝常に通常単価
+    // helper: pt input empty => auto apply default and set input value
+    function getPtOrDefault(defaultPt){
+      if(!ptInput) return Number(defaultPt||0);
+      const raw = (ptInput.value || "").toString().trim();
+      if(raw === ""){
+        const v = Number(defaultPt||0);
+        ptInput.value = String(v);
+        return v;
+      }
+      return Number(raw||0);
+    }
+
+    // 通常「回す」＝常に通常単価。空なら singleCost を自動適用
     if($("gachaRollBtn")){
       $("gachaRollBtn").onclick = ()=>{
         const user = ($("gachaListenerSelect")?.value || "").trim();
-        const pt = Number($("gachaPtInput")?.value || 0);
         if(!user) return toast("リスナー未選択");
+        if(!(c.gacha.singleCost > 0)) return toast("1回pt未設定");
 
+        const pt = getPtOrDefault(c.gacha.singleCost);
         const calc = calcGachaPullsNormal(Math.max(0, pt), c.gacha);
         if(calc.total <= 0) return toast("pt");
         rollGacha(user, pt, { forceFirstPricing:false, forceFreeOne:false });
       };
     }
 
-    // 「初回で回す」＝初回単価（初回のみ有効）
+    // 「初回で回す」＝初回単価（無料の後でもOK）
+    // 条件：初回ptが設定されていて、まだ “初回単価で回した履歴” が無い
     const firstBtn = $("gachaFirstRollBtn");
     if(firstBtn){
       const firstEnabled =
         !!selectedUser &&
         c.gacha.firstCost > 0 &&
-        !hasGachaEver(c.id, selectedUser);
+        !hasUsedFirstPricing(c.id, selectedUser);
 
       firstBtn.disabled = !firstEnabled;
 
       firstBtn.onclick = ()=>{
         const user = ($("gachaListenerSelect")?.value || "").trim();
-        const pt = Number($("gachaPtInput")?.value || 0);
         if(!user) return toast("リスナー未選択");
-        if(c.gacha.firstCost <= 0) return toast("初回pt未設定");
-        if(hasGachaEver(c.id, user)) return toast("初回ではない");
+        if(!(c.gacha.firstCost > 0)) return toast("初回pt未設定");
+        if(hasUsedFirstPricing(c.id, user)) return toast("初回済み");
 
+        const pt = getPtOrDefault(c.gacha.firstCost);
         const calc = calcGachaPullsFirst(Math.max(0, pt), c.gacha);
         if(calc.total <= 0) return toast("pt");
         rollGacha(user, pt, { forceFirstPricing:true, forceFreeOne:false });
       };
     }
 
+    // 無料で1回（ptは常に0）
     if($("gachaFreeRollBtn")){
       $("gachaFreeRollBtn").disabled = !(selectedUser && isGachaEligible(c.id, selectedUser));
       $("gachaFreeRollBtn").onclick = ()=>{
