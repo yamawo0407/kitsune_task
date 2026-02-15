@@ -175,19 +175,19 @@
 
             <div class="card" style="padding:12px; box-shadow:none;">
               <div class="card-head" style="margin-bottom:6px;">
-                <div class="card-title">初回特典（リスナーごとに初回1回だけ）</div>
+                <div class="card-title">初回特典（リスナーごとに初回1回だけ / 任意）</div>
               </div>
               <div class="grid2">
                 <label class="field">
                   <span>初回無料回数（回）</span>
-                  <input class="input" type="number" min="0" step="1" name="g_firstFreePulls" placeholder="例：10（初回10連無料）" />
+                  <input class="input" type="number" min="0" step="1" name="g_firstFreePulls" placeholder="例：10（任意）" />
                 </label>
                 <label class="field">
                   <span>初回無料pt換算（pt）</span>
-                  <input class="input" type="number" min="0" step="1" name="g_firstFreePt" placeholder="例：3000（初回3000pt分無料）" />
+                  <input class="input" type="number" min="0" step="1" name="g_firstFreePt" placeholder="例：3000（任意）" />
                 </label>
               </div>
-              <div class="muted">※両方入れた場合は「回数」を優先。</div>
+              <div class="muted">※両方入れた場合は「回数」を優先。空なら初回特典なし。</div>
             </div>
 
             <div class="ruleHead">
@@ -317,7 +317,7 @@
 
           <div class="card" style="padding:12px; box-shadow:none;">
             <div class="card-head" style="margin-bottom:6px;">
-              <div class="card-title">初回特典（リスナーごとに初回1回だけ）</div>
+              <div class="card-title">初回特典（任意）</div>
             </div>
             <div class="grid2">
               <label class="field">
@@ -329,7 +329,7 @@
                 <input id="editGFirstPt" class="input" type="number" min="0" step="1" />
               </label>
             </div>
-            <div class="muted">※両方入れた場合は「回数」を優先。</div>
+            <div class="muted">※両方入れた場合は「回数」を優先。空なら初回特典なし。</div>
           </div>
 
           <div class="ruleHead">
@@ -366,9 +366,16 @@
           <select id="gachaListenerSelect" class="input"></select>
         </label>
 
+        <div class="row gap wrapBtns">
+          <label class="btn ghost small" style="display:flex;align-items:center;gap:8px;">
+            <input id="gachaEligibleCheckbox" type="checkbox" />
+            無料対象（このリスナー）
+          </label>
+        </div>
+
         <label class="field">
           <span>使用pt</span>
-          <input id="gachaPtInput" class="input" type="number" min="0" step="1" placeholder="例：3000（初回特典なら0でも可）" />
+          <input id="gachaPtInput" class="input" type="number" min="0" step="1" placeholder="例：3000（0でも可）" />
         </label>
 
         <div class="row gap wrapBtns">
