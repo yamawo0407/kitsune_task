@@ -17,7 +17,7 @@ function toast(msg){
 }
 
 /* ===== Utils ===== */
-const STORAGE_KEY = "reward_task_manager_v27";
+const STORAGE_KEY = "reward_task_manager_v28";
 function uid(){ return Math.random().toString(16).slice(2) + Date.now().toString(16); }
 function escapeHtml(s){
   return (s ?? "").toString().replace(/[&<>"']/g,(c)=>({
@@ -39,9 +39,14 @@ function loadState(){
       listener_pool: (s.listener_pool && typeof s.listener_pool === "object") ? s.listener_pool : {},
       active_listener: (s.active_listener && typeof s.active_listener === "object") ? s.active_listener : {},
       notes: (s.notes && typeof s.notes === "object") ? s.notes : {},
+      // ★追加：ガチャ無料対象（企画ID -> { listenerName: true }）
+      gacha_free_eligible: (s.gacha_free_eligible && typeof s.gacha_free_eligible === "object") ? s.gacha_free_eligible : {},
     };
   }catch{
-    return { campaigns: [], logs: [], delivery: {}, purchases: {}, gacha_history: {}, listener_pool: {}, active_listener:{}, notes:{} };
+    return {
+      campaigns: [], logs: [], delivery: {}, purchases: {}, gacha_history: {},
+      listener_pool: {}, active_listener:{}, notes:{}, gacha_free_eligible:{}
+    };
   }
 }
 let state = loadState();
@@ -79,6 +84,7 @@ function migrate(){
   state.listener_pool ||= {};
   state.active_listener ||= {};
   state.notes ||= {};
+  state.gacha_free_eligible ||= {}; // ★追加
 }
 migrate(); saveState();
 
@@ -244,10 +250,27 @@ function gachaSummaryChips(campaignId, listenerName){
       count.set(item, (count.get(item)||0)+1);
     }
   }
-  // 無料回し回数も表示したいならここで count とは別に出す手もあるが、今回は景品集計だけ
   return Array.from(count.entries())
     .sort((a,b)=> b[1]-a[1] || a[0].localeCompare(b[0]))
     .map(([name, n])=>`${name} ×${n}`);
+}
+
+/* ===== ★Gacha free eligibility ===== */
+function getGachaEligibleMap(campaignId){
+  if(!state.gacha_free_eligible[campaignId] || typeof state.gacha_free_eligible[campaignId] !== "object"){
+    state.gacha_free_eligible[campaignId] = {};
+  }
+  return state.gacha_free_eligible[campaignId];
+}
+function isGachaEligible(campaignId, listenerName){
+  const m = getGachaEligibleMap(campaignId);
+  return m[listenerName] === true;
+}
+function setGachaEligible(campaignId, listenerName, val){
+  const m = getGachaEligibleMap(campaignId);
+  if(val) m[listenerName] = true;
+  else delete m[listenerName];
+  saveState();
 }
 
 /* ===== Reward summary for Campaign list ===== */
@@ -480,6 +503,7 @@ function validateCreateForm(){
     const items = $("gachaItemsBox") ? collectGachaItemsFrom($("gachaItemsBox")) : [];
     if(!(Number.isFinite(single) && single > 0)){ ok=false; msg="ガチャ：1回の必要ptが未入力"; }
     else if(items.length === 0){ ok=false; msg="ガチャ：景品が未入力"; }
+    // 初回特典は任意。未入力でもOK。
   }else{
     const rules = $("rulesBox") ? collectRulesFrom($("rulesBox")) : [];
     if(rules.length === 0){ ok=false; msg="返礼品（ポイント＋内容）を1つ以上入力"; }
@@ -526,8 +550,8 @@ $("createCampaignForm")?.addEventListener("submit",(e)=>{
     const singleCost = Number(fd.get("g_singleCost")||0);
     const multiCost  = Number(fd.get("g_multiCost")||0);
     const multiCount = Number(fd.get("g_multiCount")||0);
-    const firstFreePulls = Number(fd.get("g_firstFreePulls")||0);
-    const firstFreePt = Number(fd.get("g_firstFreePt")||0);
+    const firstFreePulls = Number(fd.get("g_firstFreePulls")||0); // 任意（空なら0）
+    const firstFreePt = Number(fd.get("g_firstFreePt")||0);       // 任意（空なら0）
     const items = $("gachaItemsBox") ? collectGachaItemsFrom($("gachaItemsBox")) : [];
     campaign.gacha = { singleCost, multiCost, multiCount, firstFreePulls, firstFreePt, items };
     ensureGacha(campaign);
@@ -560,6 +584,7 @@ function deleteCampaign(campaignId){
   delete state.listener_pool[campaignId];
   delete state.active_listener[campaignId];
   delete state.notes[campaignId];
+  delete state.gacha_free_eligible[campaignId]; // ★追加
   saveState();
 }
 function renderCampaigns(){
@@ -859,7 +884,6 @@ function renderLiveTable(c){
     </tr>
   `).join("");
 
-  // 行タップ：リスナー選択（ボタン押下時は無視）
   tbody.querySelectorAll("[data-pick]").forEach(tr=>{
     tr.addEventListener("click", (e)=>{
       if(e.target.closest("button")) return;
@@ -874,7 +898,6 @@ function renderLiveTable(c){
     });
   });
 
-  // shopping: 買う / 戻す
   if(normalizeCampaignType(c.type) === "shopping"){
     tbody.querySelectorAll("[data-buy]").forEach(btn=>{
       btn.addEventListener("click", (e)=>{
@@ -1016,8 +1039,8 @@ function rollGacha(user, paidPt, opts={}){
   const paid = Math.max(0, Number(paidPt||0));
   const paidPulls = calcGachaPulls(paid, c.gacha).total;
 
-  const bonusPulls = firstBonusPullsIfEligible(c, user); // 初回特典（自動）
-  const freeOne = opts.forceFreeOne ? 1 : 0;            // 任意の無料1回（ボタン）
+  const bonusPulls = firstBonusPullsIfEligible(c, user); // 初回特典（自動・任意設定）
+  const freeOne = opts.forceFreeOne ? 1 : 0;            // 任意の無料1回（条件付き）
 
   const totalPulls = paidPulls + bonusPulls + freeOne;
 
@@ -1102,6 +1125,7 @@ function validateEditCampaign(){
     const items = $("editGachaItemsBox") ? collectGachaItemsFrom($("editGachaItemsBox")) : [];
     if(!(Number.isFinite(single) && single > 0)){ ok=false; msg="ガチャ：1回の必要ptが未入力"; }
     else if(items.length === 0){ ok=false; msg="ガチャ：景品が未入力"; }
+    // 初回特典は任意。未入力でもOK。
   }else{
     const rules = $("editRulesBox") ? collectRulesFrom($("editRulesBox")) : [];
     if(rules.length === 0){ ok=false; msg="返礼品（ポイント＋内容）を1つ以上入力"; }
@@ -1166,8 +1190,8 @@ function saveCampaignEdit(){
       singleCost: Number($("editGSingle")?.value||0),
       multiCost: Number($("editGMultiCost")?.value||0),
       multiCount: Number($("editGMultiCount")?.value||0),
-      firstFreePulls: Number($("editGFirstPulls")?.value||0),
-      firstFreePt: Number($("editGFirstPt")?.value||0),
+      firstFreePulls: Number($("editGFirstPulls")?.value||0), // 任意
+      firstFreePt: Number($("editGFirstPt")?.value||0),       // 任意
       items: $("editGachaItemsBox") ? collectGachaItemsFrom($("editGachaItemsBox")) : []
     };
     ensureGacha(c);
@@ -1290,13 +1314,29 @@ function renderLive(){
   if($("undoBtn")) $("undoBtn").onclick = ()=> undoLastLog();
 
   if(isGacha){
+    const selectedUser = ($("gachaListenerSelect")?.value || "").trim();
+    const eligibleCb = $("gachaEligibleCheckbox");
+
+    // 無料対象チェック（このリスナー）
+    if(eligibleCb){
+      eligibleCb.disabled = !selectedUser;
+      eligibleCb.checked = selectedUser ? isGachaEligible(c.id, selectedUser) : false;
+      eligibleCb.onchange = ()=>{
+        const u = ($("gachaListenerSelect")?.value || "").trim();
+        if(!u) return;
+        setGachaEligible(c.id, u, eligibleCb.checked);
+        toast("更新");
+        renderLive();
+      };
+    }
+
     if($("gachaRollBtn")){
       $("gachaRollBtn").onclick = ()=>{
         const user = ($("gachaListenerSelect")?.value || "").trim();
         const pt = Number($("gachaPtInput")?.value || 0);
         if(!user) return toast("リスナー未選択");
 
-        const bonus = firstBonusPullsIfEligible(c, user);
+        const bonus = firstBonusPullsIfEligible(c, user); // 企画設定の初回特典（任意）
         const paidPulls = calcGachaPulls(Math.max(0, pt), c.gacha).total;
         if((paidPulls + bonus) <= 0) return toast("pt");
 
@@ -1304,11 +1344,13 @@ function renderLive(){
       };
     }
 
-    // ★追加：無料で1回（初回特典とは別枠）
+    // ★無料で1回：無料対象の人だけ押せる
     if($("gachaFreeRollBtn")){
+      $("gachaFreeRollBtn").disabled = !(selectedUser && isGachaEligible(c.id, selectedUser));
       $("gachaFreeRollBtn").onclick = ()=>{
         const user = ($("gachaListenerSelect")?.value || "").trim();
         if(!user) return toast("リスナー未選択");
+        if(!isGachaEligible(c.id, user)) return toast("無料対象ではない");
         rollGacha(user, 0, { forceFreeOne:true });
       };
     }
@@ -1372,6 +1414,7 @@ $("importFile")?.addEventListener("change", async (e)=>{
       listener_pool: (obj.listener_pool && typeof obj.listener_pool === "object") ? obj.listener_pool : {},
       active_listener: (obj.active_listener && typeof obj.active_listener === "object") ? obj.active_listener : {},
       notes: (obj.notes && typeof obj.notes === "object") ? obj.notes : {},
+      gacha_free_eligible: (obj.gacha_free_eligible && typeof obj.gacha_free_eligible === "object") ? obj.gacha_free_eligible : {},
     };
     migrate();
     saveState();
