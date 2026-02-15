@@ -17,8 +17,7 @@ function toast(msg){
 }
 
 /* ===== Utils ===== */
-const STORAGE_KEY = "reward_task_manager_v25";
-
+const STORAGE_KEY = "reward_task_manager_v27";
 function uid(){ return Math.random().toString(16).slice(2) + Date.now().toString(16); }
 function escapeHtml(s){
   return (s ?? "").toString().replace(/[&<>"']/g,(c)=>({
@@ -42,10 +41,7 @@ function loadState(){
       notes: (s.notes && typeof s.notes === "object") ? s.notes : {},
     };
   }catch{
-    return {
-      campaigns: [], logs: [], delivery: {}, purchases: {}, gacha_history: {},
-      listener_pool: {}, active_listener:{}, notes:{}
-    };
+    return { campaigns: [], logs: [], delivery: {}, purchases: {}, gacha_history: {}, listener_pool: {}, active_listener:{}, notes:{} };
   }
 }
 let state = loadState();
@@ -56,20 +52,26 @@ function normalizeCampaignType(t){
 }
 function ensureGacha(c){
   if(!c.gacha || typeof c.gacha !== "object"){
-    c.gacha = { singleCost: 0, multiCost: 0, multiCount: 0, items: [] };
+    c.gacha = {
+      singleCost: 0, multiCost: 0, multiCount: 0,
+      firstFreePulls: 0, firstFreePt: 0,
+      items: []
+    };
   }
   if(!Array.isArray(c.gacha.items)) c.gacha.items = [];
   c.gacha.singleCost = Number(c.gacha.singleCost||0);
   c.gacha.multiCost  = Number(c.gacha.multiCost||0);
   c.gacha.multiCount = Number(c.gacha.multiCount||0);
+  c.gacha.firstFreePulls = Number(c.gacha.firstFreePulls||0);
+  c.gacha.firstFreePt = Number(c.gacha.firstFreePt||0);
 }
 function migrate(){
   state.campaigns.forEach(c=>{
     c.type = normalizeCampaignType(c.type);
     if(!c.created_at) c.created_at = new Date().toISOString();
     if(!c.start_date && c.start) c.start_date = c.start;
-    if(c.type === "gacha") ensureGacha(c);
     c.rules ||= [];
+    if(c.type === "gacha") ensureGacha(c);
   });
   state.delivery ||= {};
   state.purchases ||= {};
@@ -225,9 +227,12 @@ function getGachaList(campaignId, listenerName){
   if(!Array.isArray(m[listenerName])) m[listenerName] = [];
   return m[listenerName];
 }
-function addGachaResult(campaignId, listenerName, ptUsed, results){
+function hasGachaEver(campaignId, listenerName){
+  return getGachaList(campaignId, listenerName).length > 0;
+}
+function addGachaResult(campaignId, listenerName, ptUsed, results, meta){
   const list = getGachaList(campaignId, listenerName);
-  list.push({ at: new Date().toISOString(), ptUsed, results: results.slice() });
+  list.push({ at: new Date().toISOString(), ptUsed, results: results.slice(), meta: meta || null });
   saveState();
 }
 function gachaSummaryChips(campaignId, listenerName){
@@ -239,6 +244,7 @@ function gachaSummaryChips(campaignId, listenerName){
       count.set(item, (count.get(item)||0)+1);
     }
   }
+  // 無料回し回数も表示したいならここで count とは別に出す手もあるが、今回は景品集計だけ
   return Array.from(count.entries())
     .sort((a,b)=> b[1]-a[1] || a[0].localeCompare(b[0]))
     .map(([name, n])=>`${name} ×${n}`);
@@ -250,10 +256,13 @@ function rewardSummaryText(c){
   if(type === "gacha"){
     ensureGacha(c);
     const cost = c.gacha?.singleCost ? `1回${c.gacha.singleCost}pt` : "1回pt未設定";
+    const bonus =
+      (c.gacha.firstFreePulls>0) ? `｜初回+${c.gacha.firstFreePulls}回` :
+      (c.gacha.firstFreePt>0) ? `｜初回${c.gacha.firstFreePt}pt分` : "";
     const items = (c.gacha?.items || []).map(it=>it?.name).filter(Boolean);
     const itemText = items.length ? items.join(" / ") : "景品未設定";
-    const text = `${cost}｜${itemText}`;
-    return text.length > 80 ? text.slice(0,80) + "…" : text;
+    const text = `${cost}${bonus}｜${itemText}`;
+    return text.length > 90 ? text.slice(0,90) + "…" : text;
   }
 
   const rules = rulesSorted(c.rules);
@@ -264,7 +273,7 @@ function rewardSummaryText(c){
     return `${r.threshold}：${r.reward}`;
   });
   const joined = parts.join(" / ");
-  return joined.length > 80 ? joined.slice(0,80) + "…" : joined;
+  return joined.length > 90 ? joined.slice(0,90) + "…" : joined;
 }
 
 /* ===== SPA routing ===== */
@@ -275,7 +284,6 @@ const views = {
   campaign: $("view-campaign"),
   live: $("view-live"),
 };
-
 function setActiveNav(viewName){
   document.querySelectorAll(".navlink").forEach(a=>a.classList.remove("active"));
   const map = { home:"home", tasks:"tasks", campaigns:"campaigns", campaign:"tasks", live:"tasks" };
@@ -296,11 +304,9 @@ function parseHashParts(){
 
 let currentCampaignId = null;
 let taskPageFilter = "all";
-
 function getCurrentCampaign(){
   return state.campaigns.find(c=>c.id===currentCampaignId) || null;
 }
-
 function route(){
   const { path, params } = parseHashParts();
 
@@ -395,7 +401,6 @@ function collectRulesFrom(container){
   rules.sort((a,b)=>a.threshold-b.threshold);
   return rules;
 }
-
 function addGachaRow(container, name="", rate=""){
   const el = document.createElement("div");
   el.className = "ruleRow";
@@ -429,14 +434,12 @@ function collectGachaItemsFrom(container){
   });
   return items;
 }
-
 function setCreateTypeUI(type){
   const isGacha = type === "gacha";
   $("createRulesSection")?.classList.toggle("hidden", isGacha);
   $("createGachaSection")?.classList.toggle("hidden", !isGacha);
   validateCreateForm();
 }
-
 $("createTypeSelect")?.addEventListener("change", ()=> setCreateTypeUI($("createTypeSelect").value));
 $("addRuleRowBtn")?.addEventListener("click", ()=> { const b=$("rulesBox"); if(b) addRuleRow(b, "", ""); validateCreateForm(); });
 $("addGachaRowBtn")?.addEventListener("click", ()=> { const b=$("gachaItemsBox"); if(b) addGachaRow(b, "", ""); validateCreateForm(); });
@@ -495,7 +498,6 @@ function validateCreateForm(){
   btn.disabled = !ok;
   hint.textContent = ok ? "" : msg;
 }
-
 $("createCampaignForm")?.addEventListener("input", validateCreateForm);
 $("createCampaignForm")?.addEventListener("change", validateCreateForm);
 
@@ -524,8 +526,10 @@ $("createCampaignForm")?.addEventListener("submit",(e)=>{
     const singleCost = Number(fd.get("g_singleCost")||0);
     const multiCost  = Number(fd.get("g_multiCost")||0);
     const multiCount = Number(fd.get("g_multiCount")||0);
+    const firstFreePulls = Number(fd.get("g_firstFreePulls")||0);
+    const firstFreePt = Number(fd.get("g_firstFreePt")||0);
     const items = $("gachaItemsBox") ? collectGachaItemsFrom($("gachaItemsBox")) : [];
-    campaign.gacha = { singleCost, multiCost, multiCount, items };
+    campaign.gacha = { singleCost, multiCost, multiCount, firstFreePulls, firstFreePt, items };
     ensureGacha(campaign);
   }else{
     campaign.rules = $("rulesBox") ? collectRulesFrom($("rulesBox")) : [];
@@ -558,7 +562,6 @@ function deleteCampaign(campaignId){
   delete state.notes[campaignId];
   saveState();
 }
-
 function renderCampaigns(){
   const listEl = $("campaignList");
   if(!listEl) return;
@@ -628,7 +631,6 @@ function filterCampaignsByListMode(list, campaigns){
   if(list==="done") return campaigns.filter(c=>isCampaignDone(c));
   return campaigns;
 }
-
 function renderTaskCampaignList(){
   const el = $("taskCampaignList");
   if(!el) return;
@@ -687,9 +689,7 @@ function renderRewardCell(campaign, listenerName, points){
     : `<div class="muted">—</div>`;
 
   const rules = rulesSorted(campaign.rules);
-  if(!rules.length){
-    return boughtHtml;
-  }
+  if(!rules.length) return boughtHtml;
 
   const can = rules.filter(r=>remaining>=r.threshold);
   const canHtml = can.length
@@ -819,9 +819,13 @@ function renderRewardList(c){
   if(type === "gacha"){
     ensureGacha(c);
     const items = c.gacha.items || [];
-    box.innerHTML = items.length
+    const bonus =
+      (c.gacha.firstFreePulls>0) ? `初回+${c.gacha.firstFreePulls}回` :
+      (c.gacha.firstFreePt>0) ? `初回${c.gacha.firstFreePt}pt分` : "";
+    const bonusChip = bonus ? `<div class="rewardChip">${escapeHtml(bonus)}</div>` : "";
+    box.innerHTML = (bonusChip + (items.length
       ? items.map(it => `<div class="rewardChip">${escapeHtml(it.name)}（${escapeHtml(it.rate)}%）</div>`).join("")
-      : `<div class="muted">返礼品なし</div>`;
+      : `<div class="muted">返礼品なし</div>`));
     return;
   }
 
@@ -922,7 +926,6 @@ function addLog(delta){
   if($("liveMsg")) $("liveMsg").textContent = `${delta>0?"+":""}${delta} / ${name}`;
   toast("反映");
 }
-
 function undoLastLog(){
   const c = getCurrentCampaign();
   if(!c) return;
@@ -936,7 +939,6 @@ function undoLastLog(){
     }
   }
 }
-
 function addNewListenerFromInput(inputId, selectId){
   const c = getCurrentCampaign();
   if(!c) return;
@@ -974,6 +976,15 @@ function calcGachaPulls(pt, g){
   const total = multiTimes * (multiCount||0) + singleTimes;
   return { total };
 }
+function firstBonusPullsIfEligible(campaign, listenerName){
+  ensureGacha(campaign);
+  if(hasGachaEver(campaign.id, listenerName)) return 0; // 初回のみ
+  const fp = Math.max(0, Math.floor(Number(campaign.gacha.firstFreePulls||0)));
+  if(fp > 0) return fp;
+  const fpt = Math.max(0, Number(campaign.gacha.firstFreePt||0));
+  if(fpt > 0) return calcGachaPulls(fpt, campaign.gacha).total;
+  return 0;
+}
 function pickGachaItem(items){
   const cleaned = items
     .filter(x => x && x.name && Number.isFinite(Number(x.rate)) && Number(x.rate) > 0)
@@ -989,13 +1000,28 @@ function pickGachaItem(items){
   }
   return cleaned[cleaned.length-1].name;
 }
-function rollGacha(user, pt){
+
+/**
+ * ガチャを回す
+ * @param {string} user
+ * @param {number} paidPt 入力pt（0でも可）
+ * @param {object} opts { forceFreeOne?:boolean }
+ * - forceFreeOne: trueなら「無料で1回」ボタン用。初回特典とは別枠で +1 回す。
+ */
+function rollGacha(user, paidPt, opts={}){
   const c = getCurrentCampaign();
   if(!c) return;
   ensureGacha(c);
 
-  const calc = calcGachaPulls(pt, c.gacha);
-  if(calc.total <= 0){
+  const paid = Math.max(0, Number(paidPt||0));
+  const paidPulls = calcGachaPulls(paid, c.gacha).total;
+
+  const bonusPulls = firstBonusPullsIfEligible(c, user); // 初回特典（自動）
+  const freeOne = opts.forceFreeOne ? 1 : 0;            // 任意の無料1回（ボタン）
+
+  const totalPulls = paidPulls + bonusPulls + freeOne;
+
+  if(totalPulls <= 0){
     if($("gachaResultBox")) $("gachaResultBox").value = "";
     return toast("回せない");
   }
@@ -1004,20 +1030,25 @@ function rollGacha(user, pt){
   setActiveListener(c.id, user);
 
   const results = [];
-  for(let i=0;i<calc.total;i++){
+  for(let i=0;i<totalPulls;i++){
     results.push(pickGachaItem(c.gacha.items || []) ?? "（景品未設定）");
   }
 
-  state.logs.push({
-    id: uid(),
-    campaign_id: c.id,
-    listener_name: user,
-    delta_points: pt,
-    created_at: new Date().toISOString(),
-  });
+  // 投げpt反映は paid 分だけ
+  if(paid > 0){
+    state.logs.push({
+      id: uid(),
+      campaign_id: c.id,
+      listener_name: user,
+      delta_points: paid,
+      created_at: new Date().toISOString(),
+    });
+  }
 
-  addGachaResult(c.id, user, pt, results);
+  // 履歴に残す（初回特典+任意無料も meta に残す）
+  addGachaResult(c.id, user, paid, results, { bonusPulls, freeOne });
 
+  // テキスト出力（番号なし、被りは×）
   const count = new Map();
   for(const r of results) count.set(r, (count.get(r) || 0) + 1);
   const lines = Array.from(count.entries())
@@ -1025,8 +1056,13 @@ function rollGacha(user, pt){
     .map(([name, n]) => (n === 1 ? `${name}` : `${name} ×${n}`))
     .join("\n");
 
+  const noteLines = [];
+  if(bonusPulls > 0) noteLines.push(`初回特典 +${bonusPulls}回`);
+  if(freeOne > 0) noteLines.push(`無料1回`);
+  const note = noteLines.length ? `（${noteLines.join(" / ")}）` : "";
+
   if($("gachaResultBox")){
-    $("gachaResultBox").value = `回した人：${user}\n回数：${calc.total}\n\n${lines}`;
+    $("gachaResultBox").value = `回した人：${user}\n回数：${totalPulls}${note}\n\n${lines}`.trim();
   }
 
   saveState();
@@ -1100,6 +1136,8 @@ function openCampaignEdit(){
     $("editGSingle").value = String(c.gacha.singleCost || "");
     $("editGMultiCost").value = String(c.gacha.multiCost || "");
     $("editGMultiCount").value = String(c.gacha.multiCount || "");
+    $("editGFirstPulls").value = String(c.gacha.firstFreePulls || "");
+    $("editGFirstPt").value = String(c.gacha.firstFreePt || "");
     const gb = $("editGachaItemsBox");
     (c.gacha.items||[]).forEach(it=> addGachaRow(gb, it.name, it.rate));
     setEditTypeUI("gacha");
@@ -1111,9 +1149,7 @@ function openCampaignEdit(){
 
   validateEditCampaign();
 }
-function closeCampaignEdit(){
-  $("campaignEditPanel")?.classList.add("hidden");
-}
+function closeCampaignEdit(){ $("campaignEditPanel")?.classList.add("hidden"); }
 function saveCampaignEdit(){
   const c = getCurrentCampaign();
   if(!c) return;
@@ -1130,6 +1166,8 @@ function saveCampaignEdit(){
       singleCost: Number($("editGSingle")?.value||0),
       multiCost: Number($("editGMultiCost")?.value||0),
       multiCount: Number($("editGMultiCount")?.value||0),
+      firstFreePulls: Number($("editGFirstPulls")?.value||0),
+      firstFreePt: Number($("editGFirstPt")?.value||0),
       items: $("editGachaItemsBox") ? collectGachaItemsFrom($("editGachaItemsBox")) : []
     };
     ensureGacha(c);
@@ -1142,7 +1180,6 @@ function saveCampaignEdit(){
   closeCampaignEdit();
   renderAll();
 }
-
 $("editCampaignBtn")?.addEventListener("click", openCampaignEdit);
 $("cancelEditCampaignBtn")?.addEventListener("click", closeCampaignEdit);
 $("saveEditCampaignBtn")?.addEventListener("click", saveCampaignEdit);
@@ -1160,7 +1197,7 @@ $("editCampType")?.addEventListener("change", ()=>{
   setEditTypeUI(normalizeCampaignType($("editCampType").value));
 });
 
-/* ===== LIVE render ===== */
+/* ===== Live render ===== */
 function renderLive(){
   const c = getCurrentCampaign();
   if(!c){ location.hash="#tasks"; return; }
@@ -1258,8 +1295,21 @@ function renderLive(){
         const user = ($("gachaListenerSelect")?.value || "").trim();
         const pt = Number($("gachaPtInput")?.value || 0);
         if(!user) return toast("リスナー未選択");
-        if(!Number.isFinite(pt) || pt<=0) return toast("pt");
-        rollGacha(user, pt);
+
+        const bonus = firstBonusPullsIfEligible(c, user);
+        const paidPulls = calcGachaPulls(Math.max(0, pt), c.gacha).total;
+        if((paidPulls + bonus) <= 0) return toast("pt");
+
+        rollGacha(user, pt, { forceFreeOne:false });
+      };
+    }
+
+    // ★追加：無料で1回（初回特典とは別枠）
+    if($("gachaFreeRollBtn")){
+      $("gachaFreeRollBtn").onclick = ()=>{
+        const user = ($("gachaListenerSelect")?.value || "").trim();
+        if(!user) return toast("リスナー未選択");
+        rollGacha(user, 0, { forceFreeOne:true });
       };
     }
 
