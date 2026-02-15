@@ -160,34 +160,20 @@
                 <input class="input" type="number" min="1" step="1" name="g_singleCost" placeholder="例：300" />
               </label>
               <label class="field">
-                <span>何ptで何連（pt）</span>
-                <input class="input" type="number" min="0" step="1" name="g_multiCost" placeholder="例：3000（任意）" />
+                <span>初回pt（任意）</span>
+                <input class="input" type="number" min="0" step="1" name="g_firstCost" placeholder="例：100（初回だけ1回100pt）" />
               </label>
             </div>
 
             <div class="grid2">
               <label class="field">
+                <span>何ptで何連（pt）</span>
+                <input class="input" type="number" min="0" step="1" name="g_multiCost" placeholder="例：3000（任意）" />
+              </label>
+              <label class="field">
                 <span>何ptで何連（連数）</span>
                 <input class="input" type="number" min="0" step="1" name="g_multiCount" placeholder="例：10（任意）" />
               </label>
-              <div></div>
-            </div>
-
-            <div class="card" style="padding:12px; box-shadow:none;">
-              <div class="card-head" style="margin-bottom:6px;">
-                <div class="card-title">初回特典（リスナーごとに初回1回だけ / 任意）</div>
-              </div>
-              <div class="grid2">
-                <label class="field">
-                  <span>初回無料回数（回）</span>
-                  <input class="input" type="number" min="0" step="1" name="g_firstFreePulls" placeholder="例：10（任意）" />
-                </label>
-                <label class="field">
-                  <span>初回無料pt換算（pt）</span>
-                  <input class="input" type="number" min="0" step="1" name="g_firstFreePt" placeholder="例：3000（任意）" />
-                </label>
-              </div>
-              <div class="muted">※両方入れた場合は「回数」を優先。空なら初回特典なし。</div>
             </div>
 
             <div class="ruleHead">
@@ -302,34 +288,20 @@
               <input id="editGSingle" class="input" type="number" min="1" step="1" />
             </label>
             <label class="field">
-              <span>何ptで何連（pt）</span>
-              <input id="editGMultiCost" class="input" type="number" min="0" step="1" />
+              <span>初回pt（任意）</span>
+              <input id="editGFirstCost" class="input" type="number" min="0" step="1" />
             </label>
           </div>
 
           <div class="grid2">
             <label class="field">
+              <span>何ptで何連（pt）</span>
+              <input id="editGMultiCost" class="input" type="number" min="0" step="1" />
+            </label>
+            <label class="field">
               <span>何ptで何連（連数）</span>
               <input id="editGMultiCount" class="input" type="number" min="0" step="1" />
             </label>
-            <div></div>
-          </div>
-
-          <div class="card" style="padding:12px; box-shadow:none;">
-            <div class="card-head" style="margin-bottom:6px;">
-              <div class="card-title">初回特典（任意）</div>
-            </div>
-            <div class="grid2">
-              <label class="field">
-                <span>初回無料回数（回）</span>
-                <input id="editGFirstPulls" class="input" type="number" min="0" step="1" />
-              </label>
-              <label class="field">
-                <span>初回無料pt換算（pt）</span>
-                <input id="editGFirstPt" class="input" type="number" min="0" step="1" />
-              </label>
-            </div>
-            <div class="muted">※両方入れた場合は「回数」を優先。空なら初回特典なし。</div>
           </div>
 
           <div class="ruleHead">
@@ -369,7 +341,7 @@
         <div class="row gap wrapBtns">
           <label class="btn ghost small" style="display:flex;align-items:center;gap:8px;">
             <input id="gachaEligibleCheckbox" type="checkbox" />
-            無料対象（このリスナー）
+            無料対象
           </label>
         </div>
 
