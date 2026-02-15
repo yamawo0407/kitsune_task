@@ -322,7 +322,6 @@ body{
   box-shadow: var(--shadow);
 }
 
-/* 企画編集パネルの視認性 */
 #campaignEditPanel{
   border-color: rgba(70,192,139,.45);
   background: linear-gradient(135deg, #fff, rgba(191,241,218,.25));
